@@ -88,7 +88,14 @@
       </div>
 
       <div class="card" id="card-donut">
-        <h2 class="card-title"><span class="t-emoji">🍩</span>Where it went</h2>
+        <div class="card-title-row">
+          <h2 class="card-title"><span class="t-emoji">🍩</span>Where it went</h2>
+          <div class="mini-nav">
+            <button class="pn-btn small" id="donut-prev" aria-label="Previous month">‹</button>
+            <span class="mini-nav-label" id="donut-month"></span>
+            <button class="pn-btn small" id="donut-next" aria-label="Next month">›</button>
+          </div>
+        </div>
         <div class="donut-wrap">
           <div id="donut-holder"></div>
           <ul class="donut-legend" id="donut-legend"></ul>
@@ -168,6 +175,32 @@
       </div>
     </section>
 
+    <!-- Stats -->
+    <section class="view hidden" id="view-stats">
+      <div class="segmented" id="stats-gran" role="tablist" aria-label="Period type">
+        <button data-g="day" role="tab">Day</button>
+        <button data-g="week" role="tab">Week</button>
+        <button data-g="month" class="active" role="tab">Month</button>
+        <button data-g="year" role="tab">Year</button>
+      </div>
+      <div class="period-nav">
+        <button class="pn-btn" id="pn-prev" aria-label="Previous period">‹</button>
+        <span class="pn-label" id="pn-label"></span>
+        <button class="pn-btn" id="pn-next" aria-label="Next period">›</button>
+      </div>
+      <div class="stat-tiles" id="stat-tiles"></div>
+      <div class="card" id="stats-chart-card">
+        <h2 class="card-title" id="stats-chart-title">Spending</h2>
+        <div id="stats-chart"></div>
+      </div>
+      <div class="card">
+        <h2 class="card-title"><span class="t-emoji">🧭</span>By category</h2>
+        <div id="stats-cats"></div>
+      </div>
+      <h2 class="add-heading" id="stats-list-heading"></h2>
+      <div id="stats-list"></div>
+    </section>
+
     <!-- Chat -->
     <section class="view hidden" id="view-chat">
       <div id="chat-messages"></div>
@@ -221,6 +254,10 @@
     </button>
     <button class="nav-add" data-view="add" aria-label="Add spending">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button class="nav-btn" data-view="stats" aria-label="Stats">
+      <svg viewBox="0 0 24 24"><path d="M4 20v-6"/><path d="M9.5 20V7"/><path d="M15 20v-9"/><path d="M20.5 20V4"/></svg>
+      <span>Stats</span>
     </button>
     <button class="nav-btn" data-view="chat" aria-label="Chat">
       <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H4l2-3.2A8 8 0 1 1 21 12z"/></svg>

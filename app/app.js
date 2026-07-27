@@ -27,6 +27,7 @@ const CATEGORIES = [
 const catOf = (name) => CATEGORIES.find((c) => c.name === name) || CATEGORIES[7];
 const catVar = (name) => catOf(name).v;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 /* ---------- state ---------- */
 let session = null;
@@ -34,6 +35,8 @@ let profile = null, household = null, members = [], txs = [], budgets = [];
 let scope = "mine";
 let view = "home";
 let bdCat = "All", bdSort = "recent", bdSearch = "";
+let homeOffset = 0; // donut card month offset (0 = current)
+let statsGran = "month", statsAnchor = new Date();
 let reviewDrafts = [];
 let chatMsgs = []; // {role, content}
 let signupMode = false;
@@ -226,7 +229,7 @@ document.querySelectorAll(".scope-btn").forEach((b) =>
   })
 );
 
-const VIEW_TITLES = { home: "Home", breakdown: "Breakdown", add: "Add", chat: "Chat", settings: "Settings" };
+const VIEW_TITLES = { home: "Home", breakdown: "Breakdown", add: "Add", stats: "Stats", chat: "Chat", settings: "Settings" };
 function switchView(v) {
   view = v;
   document.querySelectorAll(".view").forEach((s) => s.classList.add("hidden"));
@@ -243,6 +246,7 @@ document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("clic
 function renderCurrent() {
   if (view === "home") renderHome();
   if (view === "breakdown") renderBreakdown();
+  if (view === "stats") renderStats();
   if (view === "add") renderAddIdle();
   if (view === "chat") renderChat();
   if (view === "settings") renderSettings();
@@ -272,23 +276,49 @@ function renderHome() {
     deltaEl.textContent = monthTxs.length ? "First month tracked" : "Add your first receipt to get started";
   }
 
-  renderDonut(monthTxs, total);
+  renderDonutCard();
   renderTrend(list);
   renderBudgets();
   renderTopMerchants(monthTxs);
   renderMonthReceipt(monthTxs, total);
 }
 
-function renderDonut(monthTxs, total) {
+function monthDateAt(off) {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + off);
+  return d;
+}
+
+function renderDonutCard() {
+  const list = visibleTxs();
+  const d = monthDateAt(homeOffset);
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const pd = monthDateAt(homeOffset - 1);
+  const prevKey = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`;
+  const cur = list.filter((t) => monthKeyOf(t.tx_date) === key);
+  const prev = list.filter((t) => monthKeyOf(t.tx_date) === prevKey);
+  const total = cur.reduce((s, t) => s + Number(t.total), 0);
+  $("donut-month").textContent = MONTHS[d.getMonth()] + (d.getFullYear() !== new Date().getFullYear() ? " '" + String(d.getFullYear()).slice(2) : "");
+  $("donut-next").disabled = homeOffset >= 0;
+  renderDonut(cur, total, prev, homeOffset === 0 ? "this month" : MONTHS[d.getMonth()]);
+}
+
+$("donut-prev").addEventListener("click", () => { homeOffset--; renderDonutCard(); });
+$("donut-next").addEventListener("click", () => { if (homeOffset < 0) { homeOffset++; renderDonutCard(); } });
+
+function renderDonut(monthTxs, total, prevTxs, centerText) {
   const holder = $("donut-holder"), legend = $("donut-legend");
+  const prevSumOf = (name) => prevTxs.filter((t) => t.category === name).reduce((s, t) => s + Number(t.total), 0);
   const byCat = CATEGORIES.map((c) => ({
     ...c,
     sum: monthTxs.filter((t) => t.category === c.name).reduce((s, t) => s + Number(t.total), 0),
+    prev: prevSumOf(c.name),
   })).filter((c) => c.sum > 0).sort((a, b) => b.sum - a.sum);
 
   if (!byCat.length) {
     holder.innerHTML = "";
-    legend.innerHTML = `<li class="empty-note" style="padding:12px 0">Nothing yet this month.</li>`;
+    legend.innerHTML = `<li class="empty-note" style="padding:12px 0">Nothing spent in this month.</li>`;
     return;
   }
 
@@ -298,7 +328,7 @@ function renderDonut(monthTxs, total) {
   svg.setAttribute("viewBox", "0 0 120 120");
   svg.setAttribute("width", "128"); svg.setAttribute("height", "128");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", "Spending by category this month");
+  svg.setAttribute("aria-label", "Spending by category");
   byCat.forEach((c) => {
     const frac = c.sum / total;
     const seg = Math.max(frac * C - (byCat.length > 1 ? GAP : 0), 1.5);
@@ -318,7 +348,7 @@ function renderDonut(monthTxs, total) {
   label.setAttribute("text-anchor", "middle");
   label.setAttribute("class", "donut-center-label");
   label.setAttribute("style", "font-size:9px;fill:var(--muted);font-weight:600");
-  label.textContent = "this month";
+  label.textContent = centerText;
   const label2 = document.createElementNS("http://www.w3.org/2000/svg", "text");
   label2.setAttribute("x", 60); label2.setAttribute("y", 70);
   label2.setAttribute("text-anchor", "middle");
@@ -327,10 +357,21 @@ function renderDonut(monthTxs, total) {
   svg.appendChild(label); svg.appendChild(label2);
   holder.innerHTML = ""; holder.appendChild(svg);
 
-  legend.innerHTML = byCat.map((c) => `
+  legend.innerHTML = byCat.map((c) => {
+    const share = Math.round((c.sum / total) * 100);
+    let trend = "new";
+    let cls = "";
+    if (c.prev > 0) {
+      const dp = Math.round(((c.sum - c.prev) / c.prev) * 100);
+      trend = `${dp >= 0 ? "\u2191" : "\u2193"}${Math.abs(dp)}%`;
+      cls = dp < 0 ? "l-down" : "";
+    }
+    return `
     <li><span class="legend-dot" style="background:var(${c.v})"></span>
     <span class="legend-name">${esc(c.name)}</span>
-    <span class="legend-val mono">${fmtRM(c.sum)}</span></li>`).join("");
+    <span class="legend-right"><span class="legend-val mono">${fmtRM(c.sum)}</span>
+    <span class="legend-sub">${share}% \u00B7 <span class="${cls}">${trend}</span></span></span></li>`;
+  }).join("");
 }
 
 function renderTrend(list) {
@@ -861,6 +902,187 @@ $("budgets-save").addEventListener("click", async () => {
   budgets = data || [];
   toast("Budgets saved");
 });
+
+/* ================= STATS ================= */
+const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const startOfWeek = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+
+function periodInfo(g, a) {
+  const A = new Date(a); A.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let start, end, prev, next, label;
+  if (g === "day") {
+    start = A; end = A;
+    prev = addDays(A, -1); next = addDays(A, 1);
+    label = +A === +today ? "Today" : +A === +addDays(today, -1) ? "Yesterday"
+      : `${A.getDate()} ${MONTHS[A.getMonth()]} ${A.getFullYear()}`;
+  } else if (g === "week") {
+    start = startOfWeek(A); end = addDays(start, 6);
+    prev = addDays(start, -7); next = addDays(start, 7);
+    label = `${start.getDate()} ${MONTHS[start.getMonth()]} \u2013 ${end.getDate()} ${MONTHS[end.getMonth()]}`;
+  } else if (g === "month") {
+    start = new Date(A.getFullYear(), A.getMonth(), 1);
+    end = new Date(A.getFullYear(), A.getMonth() + 1, 0);
+    prev = new Date(A.getFullYear(), A.getMonth() - 1, 1);
+    next = new Date(A.getFullYear(), A.getMonth() + 1, 1);
+    label = `${MONTHS_FULL[start.getMonth()]} ${start.getFullYear()}`;
+  } else {
+    start = new Date(A.getFullYear(), 0, 1); end = new Date(A.getFullYear(), 11, 31);
+    prev = new Date(A.getFullYear() - 1, 0, 1); next = new Date(A.getFullYear() + 1, 0, 1);
+    label = String(A.getFullYear());
+  }
+  return { start, end, prev, next, label, isCurrent: today >= start && today <= end };
+}
+
+document.querySelectorAll("#stats-gran button").forEach((b) =>
+  b.addEventListener("click", () => {
+    statsGran = b.dataset.g;
+    document.querySelectorAll("#stats-gran button").forEach((x) => x.classList.toggle("active", x === b));
+    renderStats();
+  })
+);
+$("pn-prev").addEventListener("click", () => { statsAnchor = periodInfo(statsGran, statsAnchor).prev; renderStats(); });
+$("pn-next").addEventListener("click", () => {
+  const info = periodInfo(statsGran, statsAnchor);
+  if (!info.isCurrent) { statsAnchor = info.next; renderStats(); }
+});
+
+function renderStats() {
+  const info = periodInfo(statsGran, statsAnchor);
+  $("pn-label").textContent = info.label;
+  $("pn-next").disabled = info.isCurrent;
+  const list = visibleTxs();
+  const inRange = (t, s, e) => t.tx_date >= toISO(s) && t.tx_date <= toISO(e);
+  const cur = list.filter((t) => inRange(t, info.start, info.end));
+  const pinfo = periodInfo(statsGran, info.prev);
+  const prevTx = list.filter((t) => inRange(t, pinfo.start, pinfo.end));
+  const total = cur.reduce((s, t) => s + Number(t.total), 0);
+  const prevTotal = prevTx.reduce((s, t) => s + Number(t.total), 0);
+
+  // tiles
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const lastDay = today < info.end ? today : info.end;
+  const daysSoFar = Math.max(1, Math.round((lastDay - info.start) / 86400000) + 1);
+  let deltaSub = "no data for the period before";
+  let deltaCls = "";
+  if (prevTotal > 0) {
+    const dp = Math.round(((total - prevTotal) / prevTotal) * 100);
+    deltaSub = `${dp >= 0 ? "\u2191" : "\u2193"} ${Math.abs(dp)}% vs previous`;
+    deltaCls = dp < 0 ? "down" : "";
+  }
+  const biggest = cur.length ? cur.reduce((a, b) => (Number(b.total) > Number(a.total) ? b : a)) : null;
+  const byCatMap = {};
+  cur.forEach((t) => { byCatMap[t.category] = (byCatMap[t.category] || 0) + Number(t.total); });
+  const topCat = Object.entries(byCatMap).sort((a, b) => b[1] - a[1])[0];
+  const thirdTile = statsGran === "day"
+    ? `<div class="stat-tile"><div class="st-label">Biggest</div><div class="st-value">${biggest ? esc(biggest.merchant) : "\u2014"}</div><div class="st-sub">${biggest ? fmtRM(biggest.total) : ""}</div></div>`
+    : `<div class="stat-tile"><div class="st-label">Average / day</div><div class="st-value mono">${fmtRM(total / daysSoFar)}</div><div class="st-sub">over ${daysSoFar} day${daysSoFar > 1 ? "s" : ""}</div></div>`;
+  $("stat-tiles").innerHTML = `
+    <div class="stat-tile"><div class="st-label">Total spent</div><div class="st-value mono">${fmtRM(total)}</div>
+      <div class="st-sub ${deltaCls}">${deltaSub}</div></div>
+    <div class="stat-tile"><div class="st-label">Entries</div><div class="st-value">${cur.length}</div>
+      <div class="st-sub">${new Set(cur.map((t) => t.tx_date)).size} day${new Set(cur.map((t) => t.tx_date)).size === 1 ? "" : "s"} with spending</div></div>
+    ${thirdTile}
+    <div class="stat-tile"><div class="st-label">Top category</div><div class="st-value">${topCat ? catOf(topCat[0]).e + " " + esc(topCat[0]) : "\u2014"}</div>
+      <div class="st-sub">${topCat ? fmtRM(topCat[1]) : ""}</div></div>`;
+
+  renderStatsChart(cur, info);
+  renderStatsCats(byCatMap, total);
+  renderStatsList(cur);
+}
+
+function renderStatsChart(cur, info) {
+  const card = $("stats-chart-card"), holder = $("stats-chart");
+  if (statsGran === "day") { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  const buckets = [];
+  if (statsGran === "week") {
+    const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    for (let i = 0; i < 7; i++) buckets.push({ key: toISO(addDays(info.start, i)), label: names[i], show: true, sum: 0 });
+    cur.forEach((t) => { const b = buckets.find((x) => x.key === t.tx_date); if (b) b.sum += Number(t.total); });
+    $("stats-chart-title").textContent = "Per day";
+  } else if (statsGran === "month") {
+    const n = info.end.getDate();
+    for (let i = 1; i <= n; i++) buckets.push({ key: i, label: String(i), show: i === 1 || i % 5 === 0, sum: 0 });
+    cur.forEach((t) => { buckets[Number(t.tx_date.slice(8, 10)) - 1].sum += Number(t.total); });
+    $("stats-chart-title").textContent = "Per day";
+  } else {
+    for (let i = 0; i < 12; i++) buckets.push({ key: i, label: MONTHS[i][0], show: true, sum: 0 });
+    cur.forEach((t) => { buckets[Number(t.tx_date.slice(5, 7)) - 1].sum += Number(t.total); });
+    $("stats-chart-title").textContent = "Per month";
+  }
+  const max = Math.max(...buckets.map((b) => b.sum), 1);
+  const W = 340, H = 150, PAD = 10, baseY = H - 24, topY = 22;
+  const n = buckets.length;
+  const slot = (W - PAD * 2) / n;
+  const bw = Math.min(30, slot * 0.68);
+  let out = "";
+  const maxIdx = buckets.findIndex((b) => b.sum === max);
+  buckets.forEach((b, i) => {
+    const x = PAD + i * slot + (slot - bw) / 2;
+    const h = Math.max((b.sum / max) * (baseY - topY), b.sum > 0 ? 2.5 : 0);
+    const y = baseY - h;
+    if (b.sum > 0) {
+      const r = Math.min(3, h, bw / 2);
+      out += `<path class="trend-bar" data-i="${i}" d="M${x},${baseY} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + bw - r},${y} Q${x + bw},${y} ${x + bw},${y + r} L${x + bw},${baseY} Z" style="fill:var(--trend)"/>`;
+    }
+    if (i === maxIdx && b.sum > 0) {
+      const vLabel = b.sum >= 10000 ? (b.sum / 1000).toFixed(1) + "k" : Math.round(b.sum).toLocaleString();
+      out += `<text class="bar-value" x="${Math.min(Math.max(x + bw / 2, 14), W - 14)}" y="${y - 5}" text-anchor="middle">${vLabel}</text>`;
+    }
+    if (b.show) out += `<text class="axis-label" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${b.label}</text>`;
+  });
+  holder.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending over the period">
+    <line class="gridline" x1="${PAD}" y1="${baseY}" x2="${W - PAD}" y2="${baseY}"/>${out}</svg>`;
+  holder.querySelectorAll(".trend-bar").forEach((el) => {
+    const b = buckets[Number(el.dataset.i)];
+    bindTip(el, `${statsGran === "year" ? MONTHS[Number(el.dataset.i)] : b.label} \u00B7 ${fmtRM(b.sum)}`);
+  });
+}
+
+function renderStatsCats(byCatMap, total) {
+  const holder = $("stats-cats");
+  const rows = Object.entries(byCatMap).sort((a, b) => b[1] - a[1]);
+  if (!rows.length) {
+    holder.innerHTML = `<p class="muted">Nothing in this period.</p>`;
+    return;
+  }
+  holder.innerHTML = rows.map(([name, sum]) => {
+    const c = catOf(name);
+    return `<div class="cat-mini">
+      <span class="cat-mini-emoji">${c.e}</span>
+      <div class="cat-mini-mid">
+        <div class="cat-mini-head"><span>${esc(name)}</span><span class="mono">${fmtRM(sum)} \u00B7 ${Math.round((sum / total) * 100)}%</span></div>
+        <div class="cat-mini-track"><div class="cat-mini-fill" style="--p:${sum / total};background:var(${c.v})"></div></div>
+      </div></div>`;
+  }).join("");
+}
+
+function renderStatsList(cur) {
+  const holder = $("stats-list");
+  const heading = $("stats-list-heading");
+  if (!cur.length) {
+    heading.textContent = "";
+    holder.innerHTML = `<p class="empty-note"><span class="big">🍃</span>No spending in this period.</p>`;
+    return;
+  }
+  const list = [...cur].sort((a, b) => (b.tx_date || "").localeCompare(a.tx_date || ""));
+  const shown = list.slice(0, 60);
+  heading.textContent = `Entries (${list.length})`;
+  holder.innerHTML = shown.map((t) => `
+    <button class="tx-row" data-id="${t.id}">
+      <span class="cat-badge" style="--cc:var(${catVar(t.category)})">${catOf(t.category).e}</span>
+      <span class="tx-mid">
+        <span class="tx-merchant">${esc(t.merchant)}</span><br>
+        <span class="tx-sub">${fmtDate(t.tx_date)} \u00B7 ${esc(t.category)}${scope === "ours" && members.length > 1 ? " \u00B7 " + esc(memberName(t.user_id)) : ""}</span>
+      </span>
+      <span class="tx-amt mono">${fmtRM(t.total)}</span>
+    </button>`).join("") + (list.length > shown.length ? `<p class="muted" style="text-align:center">Showing ${shown.length} of ${list.length}</p>` : "");
+  holder.querySelectorAll(".tx-row").forEach((r) =>
+    r.addEventListener("click", () => openTxModal(txs.find((t) => t.id === r.dataset.id)))
+  );
+}
 
 /* ---------- CSV export ---------- */
 $("export-csv").addEventListener("click", () => {
