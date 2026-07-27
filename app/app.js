@@ -37,9 +37,39 @@ const isExpense = (t) => (t.kind || "expense") === "expense";
 const dispCat = (t) => isExpense(t)
   ? catOf(t.category)
   : { ...(INCOME_CATS.find((c) => c.name === t.category) || INCOME_CATS[4]), v: "--cat-6" };
-// approximate rates to RM (update here when they drift)
-const RATES = { MYR: 1, SGD: 3.3, USD: 4.2, EUR: 4.9, GBP: 5.7, THB: 0.13, IDR: 0.00027, JPY: 0.029, KRW: 0.0032, CNY: 0.59, TWD: 0.14, AUD: 2.9, VND: 0.00017, PHP: 0.075, INR: 0.05, HKD: 0.54 };
-const CURRENCIES = Object.keys(RATES);
+// Offline fallback only — live rates load at startup and override these.
+const FALLBACK_RATES = { MYR: 1, SGD: 3.3, USD: 4.2, EUR: 4.9, GBP: 5.7, THB: 0.13, IDR: 0.00027, JPY: 0.029, KRW: 0.0032, CNY: 0.59, TWD: 0.14, AUD: 2.9, VND: 0.00017, PHP: 0.075, INR: 0.05, HKD: 0.54 };
+let RATES = { ...FALLBACK_RATES };
+let ratesInfo = { live: false, date: null };
+const CURRENCIES = Object.keys(FALLBACK_RATES);
+
+// One free call a day; cached in localStorage, stale cache beats no rates.
+async function loadRates() {
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem("mt_rates") || "null"); } catch { /* ignore */ }
+  const useCache = () => {
+    RATES = { ...FALLBACK_RATES, ...cached.rates };
+    ratesInfo = { live: true, date: cached.date };
+  };
+  if (cached?.rates && Date.now() - cached.ts < 864e5) { useCache(); return; }
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/MYR", { cache: "no-store" });
+    const j = await res.json();
+    if (j.result !== "success" || !j.rates) throw new Error("bad payload");
+    const fresh = { MYR: 1 };
+    for (const code of CURRENCIES) {
+      const perMyr = j.rates[code];
+      if (typeof perMyr === "number" && perMyr > 0) fresh[code] = 1 / perMyr;
+    }
+    RATES = { ...FALLBACK_RATES, ...fresh };
+    const date = (j.time_last_update_utc || "").slice(5, 16) || todayISO();
+    ratesInfo = { live: true, date };
+    localStorage.setItem("mt_rates", JSON.stringify({ ts: Date.now(), rates: fresh, date }));
+  } catch {
+    if (cached?.rates) useCache();
+    else if (!ratesInfo.live) ratesInfo = { live: false, date: null };
+  }
+}
 const origNote = (t) => t.orig_amount ? ` · ${t.currency} ${Number(t.orig_amount).toLocaleString()}` : "";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -1091,6 +1121,9 @@ function renderSettings() {
   renderBudgetEditor();
   const mine = txs.filter((t) => t.user_id === session.user.id);
   const first = mine.length ? mine.reduce((a, b) => (a.tx_date < b.tx_date ? a : b)).tx_date : null;
+  $("rates-line").textContent = ratesInfo.live
+    ? `Exchange rates: live \u00B7 updated ${ratesInfo.date}`
+    : "Exchange rates: built-in estimates (couldn't reach the rate service)";
   $("data-count").textContent = mine.length
     ? `${mine.length} entries of yours, since ${fmtDate(first)}.`
     : "Nothing saved yet.";
@@ -1424,6 +1457,8 @@ $("export-csv").addEventListener("click", () => {
 });
 
 /* ---------- boot ---------- */
+loadRates();
+
 (async () => {
   const { data } = await supa.auth.getSession();
   if (!data.session) $("screen-auth").classList.remove("hidden");
