@@ -35,6 +35,7 @@ Rules:
   · "Other" is a LAST RESORT — only when nothing above fits. ALWAYS read the line items first: if they are dishes, drinks or food (pasta, burger, latte, nasi, etc.), the category is Food & Drinks no matter what the venue is called. Groceries items (raw ingredients, household goods) mean Groceries. Medicines mean Health.
 - items: line items from receipts as {name, qty, price}. Empty array for statement lines.
   IMPORTANT — thermal receipts often WRAP lines, so a price may be printed one row BELOW its item name (next to the following item). Do not blindly pair a name with the number beside it. SELF-CHECK: the sum of item prices must equal the printed subtotal / "Total Sales" (before service charge, tax, rounding). If your pairing doesn't add up, shift the price-to-item mapping until it does.
+  When a shift exists it is UNIFORM: if item #1's price is printed one row down, then EVERY item's price is one row down — including past modifier lines (Iced, Medium Well, NO ..., extra requests), which belong to the item above them and never carry their own price. Never shift some items and not others. Also sanity-check plausibility: a drink usually costs less than a main dish.
 - payment_method: e.g. "Cash", "Visa •1234", "Touch 'n Go", "DuitNow QR", or null.
 - notes: anything useful that doesn't fit elsewhere (e.g. "includes 6% SST"), else null.
 - If an image is unreadable or contains no spending data, contribute no transactions from it.`;
