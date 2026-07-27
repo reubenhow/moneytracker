@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
 
   let q = supa
     .from("transactions")
-    .select("user_id, tx_date, merchant, total, category, payment_method, notes")
+    .select("user_id, tx_date, merchant, total, kind, category, payment_method, notes")
     .order("tx_date", { ascending: false })
     .limit(4000);
   if (scope === "mine") q = q.eq("user_id", user.id);
@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
   if (error) return json({ error: "Could not load your transactions" }, 500);
 
   const lines = (txs ?? []).map((t) =>
-    `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.notes ? "|" + t.notes : ""}`
+    `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.kind === "income" ? "|INCOME" : ""}${t.notes ? "|" + t.notes : ""}`
   );
 
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
@@ -70,6 +70,7 @@ date|merchant|amount|category|person(|notes)
 ${lines.join("\n") || "(no transactions yet)"}
 </transactions>
 
+Lines ending in |INCOME are money received (salary etc.), not spending; everything else is spending. Net = income minus spending.
 Answer questions using ONLY this data. Do arithmetic carefully. Format money as RM 1,234.56.
 Be warm and brief — a couple of sentences, or a short list when comparing things.
 If the data can't answer, say so plainly. Point out useful patterns (recurring charges, unusual spikes) when they're relevant to the question.`;

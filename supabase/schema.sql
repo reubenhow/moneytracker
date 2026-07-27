@@ -24,8 +24,10 @@ create table public.transactions (
   user_id uuid not null references auth.users(id) on delete cascade,
   tx_date date not null,
   merchant text not null,
-  total numeric(12,2) not null,
-  currency text not null default 'MYR',
+  total numeric(12,2) not null,            -- always the RM value
+  kind text not null default 'expense',     -- expense | income
+  currency text not null default 'MYR',     -- original currency of the document
+  orig_amount numeric(12,2),                -- original amount when currency isn't MYR
   category text not null default 'Other',
   payment_method text,
   source text not null default 'manual', -- receipt | statement | manual

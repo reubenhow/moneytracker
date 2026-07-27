@@ -26,6 +26,21 @@ const CATEGORIES = [
 ];
 const catOf = (name) => CATEGORIES.find((c) => c.name === name) || CATEGORIES[7];
 const catVar = (name) => catOf(name).v;
+const INCOME_CATS = [
+  { name: "Salary", e: "💼" },
+  { name: "Side income", e: "🪙" },
+  { name: "Gift", e: "🎁" },
+  { name: "Refund", e: "↩️" },
+  { name: "Other income", e: "💰" },
+];
+const isExpense = (t) => (t.kind || "expense") === "expense";
+const dispCat = (t) => isExpense(t)
+  ? catOf(t.category)
+  : { ...(INCOME_CATS.find((c) => c.name === t.category) || INCOME_CATS[4]), v: "--cat-6" };
+// approximate rates to RM (update here when they drift)
+const RATES = { MYR: 1, SGD: 3.3, USD: 4.2, EUR: 4.9, GBP: 5.7, THB: 0.13, IDR: 0.00027, JPY: 0.029, KRW: 0.0032, CNY: 0.59, TWD: 0.14, AUD: 2.9, VND: 0.00017, PHP: 0.075, INR: 0.05, HKD: 0.54 };
+const CURRENCIES = Object.keys(RATES);
+const origNote = (t) => t.orig_amount ? ` · ${t.currency} ${Number(t.orig_amount).toLocaleString()}` : "";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -256,10 +271,21 @@ function renderCurrent() {
 
 /* ================= HOME ================= */
 function renderHome() {
-  const list = visibleTxs();
+  const all = visibleTxs();
+  const list = all.filter(isExpense);
   const mk = thisMonthKey();
   const monthTxs = list.filter((t) => monthKeyOf(t.tx_date) === mk);
   const total = monthTxs.reduce((s, t) => s + Number(t.total), 0);
+  const incomeMonth = all.filter((t) => !isExpense(t) && monthKeyOf(t.tx_date) === mk)
+    .reduce((s, t) => s + Number(t.total), 0);
+  const netEl = $("hero-net");
+  if (incomeMonth > 0) {
+    const net = incomeMonth - total;
+    netEl.textContent = `💰 In ${fmtRM(incomeMonth)} · Net ${net >= 0 ? "+" : "−"}${fmtRM(Math.abs(net))}`;
+    netEl.classList.remove("hidden");
+  } else {
+    netEl.classList.add("hidden");
+  }
 
   $("hero-label").textContent = scope === "ours" ? "We spent this month" : "Spent this month";
   countUp($("hero-amount"), total);
@@ -304,7 +330,7 @@ function monthDateAt(off) {
 }
 
 function renderDonutCard() {
-  const list = visibleTxs();
+  const list = visibleTxs().filter(isExpense);
   const d = monthDateAt(homeOffset);
   const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   const cur = list.filter((t) => monthKeyOf(t.tx_date) === key);
@@ -413,7 +439,7 @@ function renderTrend(list) {
 
 function renderBudgets() {
   const holder = $("budget-bars");
-  const myMonth = txs.filter((t) => t.user_id === session.user.id && monthKeyOf(t.tx_date) === thisMonthKey());
+  const myMonth = txs.filter((t) => isExpense(t) && t.user_id === session.user.id && monthKeyOf(t.tx_date) === thisMonthKey());
   const active = budgets.filter((b) => Number(b.monthly_limit) > 0);
   if (!active.length) {
     holder.innerHTML = `<p class="muted">No budgets yet. Set a monthly limit per category and I'll keep an eye on it.</p>`;
@@ -517,11 +543,13 @@ $("bd-sort").addEventListener("change", (e) => { bdSort = e.target.value; render
 
 function renderBreakdown() {
   const chips = $("cat-chips");
-  const names = ["All", ...CATEGORIES.map((c) => c.name)];
+  const names = ["All", ...CATEGORIES.map((c) => c.name), "Income"];
   chips.innerHTML = names.map((n) => {
-    const c = n === "All" ? null : catOf(n);
+    const c = n === "All" || n === "Income" ? null : catOf(n);
+    const style = c ? `style="--cc:var(${c.v})"` : n === "Income" ? `style="--cc:var(--cat-6)"` : "";
+    const icon = c ? c.e : n === "Income" ? "💰" : "✨";
     return `<button class="chip ${n === "All" ? "chip-all" : ""} ${bdCat === n ? "active" : ""}"
-      ${c ? `style="--cc:var(${c.v})"` : ""} data-cat="${esc(n)}">${c ? c.e : "✨"} ${esc(n)}</button>`;
+      ${style} data-cat="${esc(n)}">${icon} ${esc(n)}</button>`;
   }).join("");
   chips.querySelectorAll(".chip").forEach((c) =>
     c.addEventListener("click", () => { bdCat = c.dataset.cat; renderBreakdown(); })
@@ -531,7 +559,12 @@ function renderBreakdown() {
 
 function renderBdList() {
   let list = visibleTxs();
-  if (bdCat !== "All") list = list.filter((t) => t.category === bdCat);
+  if (bdCat === "Income") {
+    list = list.filter((t) => !isExpense(t));
+  } else {
+    list = list.filter(isExpense);
+    if (bdCat !== "All") list = list.filter((t) => t.category === bdCat);
+  }
   if (bdSearch) {
     list = list.filter((t) =>
       (t.merchant || "").toLowerCase().includes(bdSearch) ||
@@ -557,12 +590,12 @@ function renderBdList() {
   }
   holder.innerHTML = list.map((t) => `
     <button class="tx-row" data-id="${t.id}">
-      <span class="cat-badge" style="--cc:var(${catVar(t.category)})">${catOf(t.category).e}</span>
+      <span class="cat-badge" style="--cc:var(${dispCat(t).v})">${dispCat(t).e}</span>
       <span class="tx-mid">
         <span class="tx-merchant">${esc(t.merchant)}</span><br>
-        <span class="tx-sub">${fmtDate(t.tx_date)} · ${esc(t.category)}${scope === "ours" && members.length > 1 ? " · " + esc(memberName(t.user_id)) : ""}</span>
+        <span class="tx-sub">${fmtDate(t.tx_date)} · ${esc(t.category)}${origNote(t)}${scope === "ours" && members.length > 1 ? " · " + esc(memberName(t.user_id)) : ""}</span>
       </span>
-      <span class="tx-amt mono">${fmtRM(t.total)}</span>
+      <span class="tx-amt mono${isExpense(t) ? "" : " inc"}">${isExpense(t) ? "" : "+"}${fmtRM(t.total)}</span>
     </button>`).join("");
   holder.querySelectorAll(".tx-row").forEach((r) =>
     r.addEventListener("click", () => openTxModal(txs.find((t) => t.id === r.dataset.id)))
@@ -576,14 +609,14 @@ function openTxModal(tx) {
   const modal = $("modal-tx");
   const items = (tx.items || []);
   modal.innerHTML = `
-    <div class="modal-title"><span>${catOf(tx.category).e}</span>${esc(tx.merchant)}</div>
-    <div class="modal-sub">${fmtDate(tx.tx_date)} · ${esc(tx.source)} · added by ${esc(memberName(tx.user_id))}</div>
+    <div class="modal-title"><span>${dispCat(tx).e}</span>${esc(tx.merchant)}</div>
+    <div class="modal-sub">${fmtDate(tx.tx_date)} · ${esc(tx.source)}${origNote(tx)} · added by ${esc(memberName(tx.user_id))}</div>
     ${own ? `
     <div class="review-grid">
       <div><label>Date</label><input type="date" id="m-date" value="${esc(tx.tx_date || "")}"></div>
       <div><label>Total (RM)</label><input type="number" step="0.01" min="0" id="m-total" value="${Number(tx.total)}"></div>
       <div class="span2"><label>Place</label><input type="text" id="m-merchant" value="${esc(tx.merchant)}"></div>
-      <div><label>Category</label><select id="m-cat">${CATEGORIES.map((c) => `<option value="${c.name}" ${c.name === tx.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
+      <div><label>Category</label><select id="m-cat">${(isExpense(tx) ? CATEGORIES : INCOME_CATS).map((c) => `<option value="${c.name}" ${c.name === tx.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
       <div><label>Paid with</label><input type="text" id="m-pay" value="${esc(tx.payment_method || "")}" placeholder="Cash, card…"></div>
       <div class="span2"><label>Notes</label><input type="text" id="m-notes" value="${esc(tx.notes || "")}"></div>
     </div>` : `
@@ -641,8 +674,8 @@ $("add-manual").addEventListener("click", () => {
 });
 
 const blankDraft = () => ({
-  tx_date: todayISO(), merchant: "", total: "", category: "Other",
-  payment_method: "", source: "manual", items: [], notes: "",
+  kind: "expense", tx_date: todayISO(), merchant: "", total: "", currency: "MYR",
+  category: "Other", payment_method: "", source: "manual", items: [], notes: "",
 });
 
 async function downscale(file) {
@@ -679,6 +712,8 @@ async function handleFiles(files) {
       throw new Error(msg);
     }
     const found = (data.transactions || []).map((t) => ({
+      kind: "expense",
+      currency: t.currency && RATES[t.currency] != null ? t.currency : "MYR",
       tx_date: t.tx_date || todayISO(),
       merchant: t.merchant || "",
       total: t.total ?? "",
@@ -720,11 +755,19 @@ function showReview(heading) {
     <div class="receipt review-card" data-i="${i}">
       ${isDupe(d) ? `<div class="dupe-flag">Looks like a duplicate of one you already saved</div>` : ""}
       <div class="review-grid">
-        <div class="span2"><label>Place</label><input type="text" data-f="merchant" value="${esc(d.merchant)}" placeholder="Where was this?"></div>
+        <div class="span2 kind-toggle">
+          <button type="button" class="${d.kind !== "income" ? "active" : ""}" data-kind="expense" data-i="${i}">💸 Spending</button>
+          <button type="button" class="${d.kind === "income" ? "active" : ""}" data-kind="income" data-i="${i}">💰 Income</button>
+        </div>
+        <div class="span2"><label>${d.kind === "income" ? "From" : "Place"}</label><input type="text" data-f="merchant" value="${esc(d.merchant)}" placeholder="${d.kind === "income" ? "Who paid you?" : "Where was this?"}"></div>
         <div><label>Date</label><input type="date" data-f="tx_date" value="${esc(d.tx_date)}"></div>
-        <div><label>Total (RM)</label><input type="number" step="0.01" min="0" inputmode="decimal" data-f="total" value="${d.total}" placeholder="0.00"></div>
-        <div><label>Category</label><select data-f="category">${CATEGORIES.map((c) => `<option value="${c.name}" ${c.name === d.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
-        <div><label>Paid with</label><input type="text" data-f="payment_method" value="${esc(d.payment_method)}" placeholder="Cash, card…"></div>
+        <div><label>Total (${d.currency === "MYR" ? "RM" : esc(d.currency)})</label>
+          <input type="number" step="0.01" min="0" inputmode="decimal" data-f="total" value="${d.total}" placeholder="0.00">
+          ${d.currency !== "MYR" ? `<span class="fx-hint">≈ ${fmtRM(Number(d.total || 0) * (RATES[d.currency] || 1))} saved in RM</span>` : ""}
+        </div>
+        <div><label>Currency</label><select data-f="currency">${CURRENCIES.map((cc) => `<option ${cc === d.currency ? "selected" : ""}>${cc}</option>`).join("")}</select></div>
+        <div><label>Category</label><select data-f="category">${(d.kind === "income" ? INCOME_CATS : CATEGORIES).map((c) => `<option value="${c.name}" ${c.name === d.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
+        <div><label>${d.kind === "income" ? "Received via" : "Paid with"}</label><input type="text" data-f="payment_method" value="${esc(d.payment_method)}" placeholder="Cash, card…"></div>
         <div class="span2"><label>Notes</label><input type="text" data-f="notes" value="${esc(d.notes)}"></div>
       </div>
       ${d.items.length ? `<div class="review-items">${d.items.map((it) => `
@@ -735,9 +778,24 @@ function showReview(heading) {
   holder.querySelectorAll("[data-f]").forEach((inp) => {
     inp.addEventListener("input", () => {
       const card = inp.closest(".review-card");
-      reviewDrafts[Number(card.dataset.i)][inp.dataset.f] = inp.value;
+      const d = reviewDrafts[Number(card.dataset.i)];
+      d[inp.dataset.f] = inp.value;
+      if (inp.dataset.f === "total" && d.currency !== "MYR") {
+        const hint = card.querySelector(".fx-hint");
+        if (hint) hint.textContent = `≈ ${fmtRM(Number(d.total || 0) * (RATES[d.currency] || 1))} saved in RM`;
+      }
+      if (inp.dataset.f === "currency") showReview($("review-heading").textContent);
     });
   });
+  holder.querySelectorAll("[data-kind]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const d = reviewDrafts[Number(b.dataset.i)];
+      if (d.kind === b.dataset.kind) return;
+      d.kind = b.dataset.kind;
+      d.category = d.kind === "income" ? "Salary" : "Other";
+      showReview($("review-heading").textContent);
+    })
+  );
   holder.querySelectorAll(".review-remove").forEach((b) =>
     b.addEventListener("click", () => {
       reviewDrafts.splice(Number(b.dataset.i), 1);
@@ -754,11 +812,16 @@ $("review-save-all").addEventListener("click", async () => {
     if (!String(d.merchant).trim()) return toast("Every entry needs a place name");
     const total = Number(d.total);
     if (!(total > 0)) return toast("Every entry needs an amount above zero");
+    const rate = RATES[d.currency] ?? 1;
+    const myr = d.currency === "MYR" ? total : total * rate;
     rows.push({
       user_id: session.user.id,
+      kind: d.kind || "expense",
       tx_date: d.tx_date || todayISO(),
       merchant: String(d.merchant).trim(),
-      total: total.toFixed(2),
+      total: myr.toFixed(2),
+      currency: d.currency || "MYR",
+      orig_amount: d.currency === "MYR" ? null : total.toFixed(2),
       category: d.category,
       payment_method: String(d.payment_method).trim() || null,
       source: d.source,
@@ -984,11 +1047,13 @@ function renderStats() {
   const info = periodInfo(statsGran, statsAnchor);
   $("pn-label").textContent = info.label;
   $("pn-next").disabled = info.isCurrent;
-  const list = visibleTxs();
+  const allTx = visibleTxs();
   const inRange = (t, s, e) => t.tx_date >= toISO(s) && t.tx_date <= toISO(e);
-  const cur = list.filter((t) => inRange(t, info.start, info.end));
+  const curAll = allTx.filter((t) => inRange(t, info.start, info.end));
+  const cur = curAll.filter(isExpense);
+  const curInc = curAll.filter((t) => !isExpense(t));
   const pinfo = periodInfo(statsGran, info.prev);
-  const prevTx = list.filter((t) => inRange(t, pinfo.start, pinfo.end));
+  const prevTx = allTx.filter(isExpense).filter((t) => inRange(t, pinfo.start, pinfo.end));
   const total = cur.reduce((s, t) => s + Number(t.total), 0);
   const prevTotal = prevTx.reduce((s, t) => s + Number(t.total), 0);
 
@@ -1017,12 +1082,21 @@ function renderStats() {
       <div class="st-sub">${new Set(cur.map((t) => t.tx_date)).size} day${new Set(cur.map((t) => t.tx_date)).size === 1 ? "" : "s"} with spending</div></div>
     ${thirdTile}
     <div class="stat-tile"><div class="st-label">Top category</div><div class="st-value">${topCat ? catOf(topCat[0]).e + " " + esc(topCat[0]) : "\u2014"}</div>
-      <div class="st-sub">${topCat ? fmtRM(topCat[1]) : ""}</div></div>`;
+      <div class="st-sub">${topCat ? fmtRM(topCat[1]) : ""}</div></div>${(() => {
+        const incTotal = curInc.reduce((s, t) => s + Number(t.total), 0);
+        if (incTotal <= 0) return "";
+        const net = incTotal - total;
+        return `
+    <div class="stat-tile"><div class="st-label">Income</div><div class="st-value mono">${fmtRM(incTotal)}</div>
+      <div class="st-sub">${curInc.length} entr${curInc.length === 1 ? "y" : "ies"}</div></div>
+    <div class="stat-tile"><div class="st-label">Net</div><div class="st-value mono">${net >= 0 ? "+" : "−"}${fmtRM(Math.abs(net))}</div>
+      <div class="st-sub ${net >= 0 ? "down" : ""}">income minus spending</div></div>`;
+      })()}`;
 
   renderStatsChart(cur, info);
   renderHeat(cur, info);
   renderStatsCats(byCatMap, total);
-  renderStatsList(cur);
+  renderStatsList(curAll);
 }
 
 function renderStatsChart(cur, info) {
@@ -1138,12 +1212,12 @@ function renderStatsList(cur) {
   heading.textContent = `Entries (${list.length})`;
   holder.innerHTML = shown.map((t) => `
     <button class="tx-row" data-id="${t.id}">
-      <span class="cat-badge" style="--cc:var(${catVar(t.category)})">${catOf(t.category).e}</span>
+      <span class="cat-badge" style="--cc:var(${dispCat(t).v})">${dispCat(t).e}</span>
       <span class="tx-mid">
         <span class="tx-merchant">${esc(t.merchant)}</span><br>
-        <span class="tx-sub">${fmtDate(t.tx_date)} \u00B7 ${esc(t.category)}${scope === "ours" && members.length > 1 ? " \u00B7 " + esc(memberName(t.user_id)) : ""}</span>
+        <span class="tx-sub">${fmtDate(t.tx_date)} \u00B7 ${esc(t.category)}${origNote(t)}${scope === "ours" && members.length > 1 ? " \u00B7 " + esc(memberName(t.user_id)) : ""}</span>
       </span>
-      <span class="tx-amt mono">${fmtRM(t.total)}</span>
+      <span class="tx-amt mono${isExpense(t) ? "" : " inc"}">${isExpense(t) ? "" : "+"}${fmtRM(t.total)}</span>
     </button>`).join("") + (list.length > shown.length ? `<p class="muted" style="text-align:center">Showing ${shown.length} of ${list.length}</p>` : "");
   holder.querySelectorAll(".tx-row").forEach((r) =>
     r.addEventListener("click", () => openTxModal(txs.find((t) => t.id === r.dataset.id)))
@@ -1154,11 +1228,12 @@ function renderStatsList(cur) {
 $("export-csv").addEventListener("click", () => {
   const list = visibleTxs();
   if (!list.length) return toast("Nothing to export yet");
-  const head = "date,merchant,total_rm,category,payment_method,source,person,notes\n";
+  const head = "date,kind,merchant,total_rm,currency,orig_amount,category,payment_method,source,person,notes\n";
   const csvEsc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
   const body = list.map((t) =>
-    [t.tx_date, csvEsc(t.merchant), Number(t.total).toFixed(2), csvEsc(t.category),
-     csvEsc(t.payment_method || ""), t.source, csvEsc(memberName(t.user_id)), csvEsc(t.notes || "")].join(",")
+    [t.tx_date, t.kind || "expense", csvEsc(t.merchant), Number(t.total).toFixed(2), t.currency || "MYR",
+     t.orig_amount ?? "", csvEsc(t.category), csvEsc(t.payment_method || ""), t.source,
+     csvEsc(memberName(t.user_id)), csvEsc(t.notes || "")].join(",")
   ).join("\n");
   const blob = new Blob([head + body], { type: "text/csv" });
   const a = document.createElement("a");

@@ -22,7 +22,8 @@ Rules:
 - A bank or card statement page produces ONE transaction PER spending line (debits, purchases, payments out). SKIP incoming money: deposits, salary, refunds, transfers in.
 - tx_date: ISO YYYY-MM-DD. If the year is missing assume the most recent plausible one. If no date is visible at all, use null.
 - merchant: clean, human-readable name (e.g. "Tesco Extra Cheras", not "TESCO EXTRA CHERAS SDN BHD 003421"). For statements, clean up each line's merchant.
-- total: the final amount paid, as a positive number.
+- total: the final amount paid, as a positive number, in the document's own currency.
+- currency: ISO 4217 code of the money on the document (MYR for Malaysian receipts; the printed currency for foreign receipts, e.g. THB, SGD, JPY).
 - category: exactly one of ${JSON.stringify(CATEGORIES)}. Pick the best fit. Judge by what the merchant IS, not just what's written:
   · Petrol stations (Petronas, Shell, Petron, BHPetrol, Caltex), tolls (Touch 'n Go, PLUS), parking, Grab/taxi rides, LRT/MRT/KTM, car wash & service = Transport.
   · Restaurants, mamak, kopitiam, cafes, fast food, food delivery (GrabFood, Foodpanda, ShopeeFood) = Food & Drinks.
@@ -54,6 +55,7 @@ const RESPONSE_SCHEMA = {
               tx_date: { type: ["string", "null"] },
               merchant: { type: "string" },
               total: { type: "number" },
+              currency: { type: "string" },
               category: { type: "string", enum: CATEGORIES },
               payment_method: { type: ["string", "null"] },
               source: { type: "string", enum: ["receipt", "statement"] },
@@ -72,7 +74,7 @@ const RESPONSE_SCHEMA = {
               },
               notes: { type: ["string", "null"] },
             },
-            required: ["tx_date", "merchant", "total", "category", "payment_method", "source", "items", "notes"],
+            required: ["tx_date", "merchant", "total", "currency", "category", "payment_method", "source", "items", "notes"],
           },
         },
       },
