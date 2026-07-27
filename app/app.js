@@ -771,7 +771,7 @@ function showReview(heading) {
         <div class="span2"><label>Notes</label><input type="text" data-f="notes" value="${esc(d.notes)}"></div>
       </div>
       <div class="review-items">
-        ${d.items.map((it, j) => `
+        ${d._editItems ? `${d.items.map((it, j) => `
         <div class="item-edit-row" data-j="${j}">
           <input type="number" class="ie-qty" min="0" step="1" inputmode="numeric" value="${Number(it.qty) || 1}" data-if="qty" aria-label="Quantity">
           <input type="text" class="ie-name" value="${esc(it.name)}" placeholder="Item" data-if="name">
@@ -779,9 +779,17 @@ function showReview(heading) {
           <button type="button" class="ie-del" aria-label="Remove item">×</button>
         </div>`).join("")}
         <div class="items-foot">
-          <button type="button" class="btn-link small ie-add">+ item</button>
+          <span><button type="button" class="btn-link small ie-add">+ item</button>
+          <button type="button" class="btn-link small ie-done">Done</button></span>
           <span class="items-sum" data-role="sum"></span>
-        </div>
+        </div>` : `${d.items.map((it, j) => `
+        <button type="button" class="r-line item-tap" data-j="${j}">
+          <span>${Number(it.qty) || 1}× ${esc(it.name)}</span><span>${fmtRM(it.price)}</span>
+        </button>`).join("")}
+        <div class="items-foot">
+          <button type="button" class="btn-link small ie-add">${d.items.length ? "+ item" : "+ line items"}</button>
+          <span class="items-sum" data-role="sum"></span>
+        </div>`}
       </div>
       ${reviewDrafts.length > 1 ? `<button class="btn-danger-link review-remove" data-i="${i}">Don't save this one</button>` : ""}
     </div>`).join("");
@@ -826,10 +834,39 @@ function showReview(heading) {
   holder.querySelectorAll(".ie-add").forEach((b) =>
     b.addEventListener("click", () => {
       const card = b.closest(".review-card");
-      reviewDrafts[Number(card.dataset.i)].items.push({ name: "", qty: 1, price: 0 });
+      const d = reviewDrafts[Number(card.dataset.i)];
+      d._editItems = true;
+      d.items.push({ name: "", qty: 1, price: 0 });
+      d._focus = { j: d.items.length - 1, f: "name" };
       showReview($("review-heading").textContent);
     })
   );
+  holder.querySelectorAll(".item-tap").forEach((b) =>
+    b.addEventListener("click", () => {
+      const card = b.closest(".review-card");
+      const d = reviewDrafts[Number(card.dataset.i)];
+      d._editItems = true;
+      d._focus = { j: Number(b.dataset.j), f: "price" };
+      showReview($("review-heading").textContent);
+    })
+  );
+  holder.querySelectorAll(".ie-done").forEach((b) =>
+    b.addEventListener("click", () => {
+      const card = b.closest(".review-card");
+      const d = reviewDrafts[Number(card.dataset.i)];
+      d._editItems = false;
+      d.items = d.items.filter((it) => String(it.name).trim() || Number(it.price) > 0);
+      showReview($("review-heading").textContent);
+    })
+  );
+  holder.querySelectorAll(".review-card").forEach((card) => {
+    const d = reviewDrafts[Number(card.dataset.i)];
+    if (d._editItems && d._focus) {
+      const inp = card.querySelector(`.item-edit-row[data-j="${d._focus.j}"] [data-if="${d._focus.f}"]`);
+      if (inp) { inp.focus(); if (inp.select) inp.select(); }
+      delete d._focus;
+    }
+  });
   holder.querySelectorAll(".review-card").forEach((card) =>
     updateItemsSum(card, reviewDrafts[Number(card.dataset.i)])
   );

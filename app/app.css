@@ -600,3 +600,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 .ie-del { flex: 0 0 30px; color: var(--danger); font-size: 1.2rem; font-weight: 700; }
 .items-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
 .items-sum { font-size: 0.75rem; color: var(--muted); font-family: var(--font-mono); }
+
+/* tap a line item to edit it in place */
+.item-tap { width: 100%; font-family: var(--font-mono); font-size: 0.85rem; padding: 3px 0; border-radius: 6px; }
+.item-tap:active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
