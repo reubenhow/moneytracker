@@ -157,13 +157,13 @@ function bindTip(el, text) {
 
 /* ---------- theme ---------- */
 const themeBtn = $("theme-btn");
-function applyTheme(t) {
+function applyTheme(t, persist = true) {
   document.documentElement.dataset.theme = t;
-  localStorage.setItem("mt_theme", t);
+  if (persist) localStorage.setItem("mt_theme2", t);
   themeBtn.textContent = t === "dark" ? "🌞" : "🌙";
   document.getElementById("meta-theme").setAttribute("content", t === "dark" ? "#171511" : "#F6F1E7");
 }
-applyTheme(localStorage.getItem("mt_theme") || "light");
+applyTheme(localStorage.getItem("mt_theme2") || "dark", false);
 themeBtn.addEventListener("click", () =>
   applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")
 );
