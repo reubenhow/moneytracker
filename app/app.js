@@ -329,7 +329,7 @@ function renderDonut(monthTxs, total) {
 
   legend.innerHTML = byCat.map((c) => `
     <li><span class="legend-dot" style="background:var(${c.v})"></span>
-    <span class="legend-name">${c.e} ${esc(c.name)}</span>
+    <span class="legend-name">${esc(c.name)}</span>
     <span class="legend-val mono">${fmtRM(c.sum)}</span></li>`).join("");
 }
 
