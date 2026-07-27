@@ -65,6 +65,27 @@ Deno.serve(async (req) => {
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiKey) return json({ error: "OPENAI_API_KEY secret not set on the server" }, 500);
 
+  // Precompute exact totals — the model must not do long arithmetic itself.
+  const exp = (txs ?? []).filter((t) => t.kind !== "income");
+  const monthTot = new Map<string, number>();
+  const catTot = new Map<string, number>();
+  const merch = new Map<string, { sum: number; n: number; last: string }>();
+  for (const t of exp) {
+    const m = String(t.tx_date).slice(0, 7);
+    monthTot.set(m, (monthTot.get(m) || 0) + Number(t.total));
+    catTot.set(t.category, (catTot.get(t.category) || 0) + Number(t.total));
+    const e = merch.get(t.merchant) || { sum: 0, n: 0, last: String(t.tx_date) };
+    e.sum += Number(t.total); e.n++;
+    if (String(t.tx_date) > e.last) e.last = String(t.tx_date);
+    merch.set(t.merchant, e);
+  }
+  const aggMonths = [...monthTot.entries()].sort().slice(-12)
+    .map(([m, v]) => `${m}: RM ${v.toFixed(2)}`).join("; ");
+  const aggCats = [...catTot.entries()].sort((a, b) => b[1] - a[1])
+    .map(([c, v]) => `${c}: RM ${v.toFixed(2)}`).join("; ");
+  const aggTops = [...merch.entries()].sort((a, b) => b[1].sum - a[1].sum).slice(0, 15)
+    .map(([k, e]) => `${k}: RM ${e.sum.toFixed(2)}, ${e.n} visit(s), last ${e.last}`).join("; ");
+
   const system = `You are the assistant inside "Money Tracker", a personal spending app. Currency is RM (Malaysian Ringgit).
 Today's date: ${new Date().toISOString().slice(0, 10)}.
 The user's ${scope === "ours" ? "household's" : "own"} transactions are below, newest first, one per line:
@@ -75,6 +96,11 @@ ${lines.join("\n") || "(no transactions yet)"}
 </transactions>
 
 Lines ending in |INCOME are money received (salary etc.), not spending; everything else is spending. Net = income minus spending.
+
+PRECOMPUTED EXACT TOTALS (spending only — trust these over your own arithmetic; only compute manually for questions these don't cover):
+Monthly totals: ${aggMonths || "none"}
+Category totals (all time): ${aggCats || "none"}
+Top merchants: ${aggTops || "none"}
 Answer questions using ONLY this data. Do arithmetic carefully. Format money as RM 1,234.56.
 Be warm and brief — a couple of sentences, or a short list when comparing things.
 If the data can't answer, say so plainly. Point out useful patterns (recurring charges, unusual spikes) when they're relevant to the question.`;

@@ -125,6 +125,25 @@ Deno.serve(async (req) => {
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiKey) return json({ error: "OPENAI_API_KEY secret not set on the server" }, 500);
 
+  // Learn from this user's history: same merchant -> same category next time.
+  let known = "";
+  try {
+    const { data: hist } = await supa
+      .from("transactions")
+      .select("merchant, category, kind")
+      .order("created_at", { ascending: false })
+      .limit(300);
+    if (hist?.length) {
+      const map = new Map<string, string>();
+      for (const h of hist) {
+        if (h.kind === "income") continue;
+        const k = String(h.merchant).toLowerCase();
+        if (!map.has(k)) map.set(k, `${h.merchant}=${h.category}`);
+      }
+      known = [...map.values()].slice(0, 80).join("; ");
+    }
+  } catch (_) { /* history is a bonus, never a blocker */ }
+
   const content: unknown[] = [
     { type: "text", text: `Extract all spending from these ${images.length} image(s). Today's date is ${new Date().toISOString().slice(0, 10)}.` },
     ...images.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
@@ -136,7 +155,9 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       model: "gpt-4o",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: SYSTEM_PROMPT + (known ? `
+
+This user's known merchants and their chosen categories — reuse them (match loosely: ignore case, branch names, store numbers): ${known}` : "") },
         { role: "user", content },
       ],
       response_format: RESPONSE_SCHEMA,
