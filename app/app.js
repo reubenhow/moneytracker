@@ -242,6 +242,8 @@ function switchView(v) {
 }
 document.querySelectorAll(".nav-btn, .nav-add").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.view)));
 document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => switchView(b.dataset.goto)));
+$("card-trend").addEventListener("click", () => switchView("stats"));
+$("card-trend").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") switchView("stats"); });
 
 function renderCurrent() {
   if (view === "home") renderHome();
@@ -294,26 +296,21 @@ function renderDonutCard() {
   const list = visibleTxs();
   const d = monthDateAt(homeOffset);
   const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  const pd = monthDateAt(homeOffset - 1);
-  const prevKey = `${pd.getFullYear()}-${String(pd.getMonth() + 1).padStart(2, "0")}`;
   const cur = list.filter((t) => monthKeyOf(t.tx_date) === key);
-  const prev = list.filter((t) => monthKeyOf(t.tx_date) === prevKey);
   const total = cur.reduce((s, t) => s + Number(t.total), 0);
   $("donut-month").textContent = MONTHS[d.getMonth()] + (d.getFullYear() !== new Date().getFullYear() ? " '" + String(d.getFullYear()).slice(2) : "");
   $("donut-next").disabled = homeOffset >= 0;
-  renderDonut(cur, total, prev, homeOffset === 0 ? "this month" : MONTHS[d.getMonth()]);
+  renderDonut(cur, total, homeOffset === 0 ? "this month" : MONTHS[d.getMonth()]);
 }
 
 $("donut-prev").addEventListener("click", () => { homeOffset--; renderDonutCard(); });
 $("donut-next").addEventListener("click", () => { if (homeOffset < 0) { homeOffset++; renderDonutCard(); } });
 
-function renderDonut(monthTxs, total, prevTxs, centerText) {
+function renderDonut(monthTxs, total, centerText) {
   const holder = $("donut-holder"), legend = $("donut-legend");
-  const prevSumOf = (name) => prevTxs.filter((t) => t.category === name).reduce((s, t) => s + Number(t.total), 0);
   const byCat = CATEGORIES.map((c) => ({
     ...c,
     sum: monthTxs.filter((t) => t.category === c.name).reduce((s, t) => s + Number(t.total), 0),
-    prev: prevSumOf(c.name),
   })).filter((c) => c.sum > 0).sort((a, b) => b.sum - a.sum);
 
   if (!byCat.length) {
@@ -357,21 +354,10 @@ function renderDonut(monthTxs, total, prevTxs, centerText) {
   svg.appendChild(label); svg.appendChild(label2);
   holder.innerHTML = ""; holder.appendChild(svg);
 
-  legend.innerHTML = byCat.map((c) => {
-    const share = Math.round((c.sum / total) * 100);
-    let trend = "new";
-    let cls = "";
-    if (c.prev > 0) {
-      const dp = Math.round(((c.sum - c.prev) / c.prev) * 100);
-      trend = `${dp >= 0 ? "\u2191" : "\u2193"}${Math.abs(dp)}%`;
-      cls = dp < 0 ? "l-down" : "";
-    }
-    return `
+  legend.innerHTML = byCat.map((c) => `
     <li><span class="legend-dot" style="background:var(${c.v})"></span>
     <span class="legend-name">${esc(c.name)}</span>
-    <span class="legend-right"><span class="legend-val mono">${fmtRM(c.sum)}</span>
-    <span class="legend-sub">${share}% \u00B7 <span class="${cls}">${trend}</span></span></span></li>`;
-  }).join("");
+    <span class="legend-val mono">${fmtRM(c.sum)}</span></li>`).join("");
 }
 
 function renderTrend(list) {
@@ -400,7 +386,7 @@ function renderTrend(list) {
       const r = Math.min(4, h);
       bars += `<path class="trend-bar" data-i="${i}" d="M${x},${baseY} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + bw - r},${y} Q${x + bw},${y} ${x + bw},${y + r} L${x + bw},${baseY} Z" style="fill:var(--trend)"/>`;
     }
-    if (i === 5 && m.sum > 0) {
+    if (m.sum > 0) {
       const vLabel = m.sum >= 10000 ? (m.sum / 1000).toFixed(1) + "k" : Math.round(m.sum).toLocaleString();
       bars += `<text class="bar-value" x="${x + bw / 2}" y="${y - 6}" text-anchor="middle">${vLabel}</text>`;
     }
@@ -1018,7 +1004,7 @@ function renderStatsChart(cur, info) {
   const slot = (W - PAD * 2) / n;
   const bw = Math.min(30, slot * 0.68);
   let out = "";
-  const maxIdx = buckets.findIndex((b) => b.sum === max);
+  const vfont = n > 14 ? 7.5 : n > 8 ? 9 : 11;
   buckets.forEach((b, i) => {
     const x = PAD + i * slot + (slot - bw) / 2;
     const h = Math.max((b.sum / max) * (baseY - topY), b.sum > 0 ? 2.5 : 0);
@@ -1027,9 +1013,9 @@ function renderStatsChart(cur, info) {
       const r = Math.min(3, h, bw / 2);
       out += `<path class="trend-bar" data-i="${i}" d="M${x},${baseY} L${x},${y + r} Q${x},${y} ${x + r},${y} L${x + bw - r},${y} Q${x + bw},${y} ${x + bw},${y + r} L${x + bw},${baseY} Z" style="fill:var(--trend)"/>`;
     }
-    if (i === maxIdx && b.sum > 0) {
-      const vLabel = b.sum >= 10000 ? (b.sum / 1000).toFixed(1) + "k" : Math.round(b.sum).toLocaleString();
-      out += `<text class="bar-value" x="${Math.min(Math.max(x + bw / 2, 14), W - 14)}" y="${y - 5}" text-anchor="middle">${vLabel}</text>`;
+    if (b.sum > 0) {
+      const vLabel = b.sum >= 10000 ? (b.sum / 1000).toFixed(1) + "k" : b.sum >= 1000 ? (b.sum / 1000).toFixed(1) + "k" : Math.round(b.sum);
+      out += `<text class="bar-value" style="font-size:${vfont}px" x="${Math.min(Math.max(x + bw / 2, 10), W - 10)}" y="${y - 4}" text-anchor="middle">${vLabel}</text>`;
     }
     if (b.show) out += `<text class="axis-label" x="${x + bw / 2}" y="${H - 8}" text-anchor="middle">${b.label}</text>`;
   });

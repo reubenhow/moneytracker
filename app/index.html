@@ -102,8 +102,11 @@
         </div>
       </div>
 
-      <div class="card" id="card-trend">
-        <h2 class="card-title"><span class="t-emoji">📊</span>Last 6 months</h2>
+      <div class="card tappable" id="card-trend" role="button" tabindex="0" aria-label="Open full stats">
+        <div class="card-title-row">
+          <h2 class="card-title"><span class="t-emoji">📊</span>Last 6 months</h2>
+          <span class="card-more">All stats ›</span>
+        </div>
         <div id="trend-holder"></div>
       </div>
 
@@ -254,10 +257,6 @@
     </button>
     <button class="nav-add" data-view="add" aria-label="Add spending">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-    </button>
-    <button class="nav-btn" data-view="stats" aria-label="Stats">
-      <svg viewBox="0 0 24 24"><path d="M4 20v-6"/><path d="M9.5 20V7"/><path d="M15 20v-9"/><path d="M20.5 20V4"/></svg>
-      <span>Stats</span>
     </button>
     <button class="nav-btn" data-view="chat" aria-label="Chat">
       <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H4l2-3.2A8 8 0 1 1 21 12z"/></svg>
