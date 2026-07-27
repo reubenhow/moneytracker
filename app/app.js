@@ -605,9 +605,9 @@ function openTxModal(tx) {
     <div class="modal-sub">${fmtDate(tx.tx_date)} · ${esc(tx.source)}${origNote(tx)} · added by ${esc(memberName(tx.user_id))}</div>
     ${own ? `
     <div class="review-grid">
-      <div><label>Date</label><input type="date" id="m-date" value="${esc(tx.tx_date || "")}"></div>
-      <div><label>Total (RM)</label><input type="number" step="0.01" min="0" id="m-total" value="${Number(tx.total)}"></div>
       <div class="span2"><label>Place</label><input type="text" id="m-merchant" value="${esc(tx.merchant)}"></div>
+      <div class="span2"><label>Date</label><input type="date" id="m-date" value="${esc(tx.tx_date || "")}"></div>
+      <div><label>Total (RM)</label><input type="number" step="0.01" min="0" id="m-total" value="${Number(tx.total)}"></div>
       <div><label>Category</label><select id="m-cat">${(isExpense(tx) ? CATEGORIES : INCOME_CATS).map((c) => `<option value="${c.name}" ${c.name === tx.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
       <div><label>Paid with</label><input type="text" id="m-pay" value="${esc(tx.payment_method || "")}" placeholder="Cash, card…"></div>
       <div class="span2"><label>Notes</label><input type="text" id="m-notes" value="${esc(tx.notes || "")}"></div>
@@ -752,7 +752,7 @@ function showReview(heading) {
           <button type="button" class="${d.kind === "income" ? "active" : ""}" data-kind="income" data-i="${i}">💰 Income</button>
         </div>
         <div class="span2"><label>${d.kind === "income" ? "From" : "Place"}</label><input type="text" data-f="merchant" value="${esc(d.merchant)}" placeholder="${d.kind === "income" ? "Who paid you?" : "Where was this?"}"></div>
-        <div><label>Date</label><input type="date" data-f="tx_date" value="${esc(d.tx_date)}"></div>
+        <div class="span2"><label>Date</label><input type="date" data-f="tx_date" value="${esc(d.tx_date)}"></div>
         <div><label>Total (${d.currency === "MYR" ? "RM" : esc(d.currency)})</label>
           <input type="number" step="0.01" min="0" inputmode="decimal" data-f="total" value="${d.total}" placeholder="0.00">
           ${d.currency !== "MYR" ? `<span class="fx-hint">≈ ${fmtRM(Number(d.total || 0) * (RATES[d.currency] || 1))} saved in RM</span>` : ""}
