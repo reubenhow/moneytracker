@@ -591,3 +591,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .duo > .duo-total { flex: 1; min-width: 0; overflow: hidden; }
 .duo input { width: 100%; max-width: 100%; min-width: 0; }
 input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+
+/* editable line items in review */
+.item-edit-row { display: flex; gap: 6px; margin-bottom: 6px; font-family: var(--font-body); }
+.ie-qty { flex: 0 0 52px; text-align: center; padding: 8px 4px; }
+.ie-name { flex: 1; min-width: 0; }
+.ie-price { flex: 0 0 88px; text-align: right; font-family: var(--font-mono); }
+.ie-del { flex: 0 0 30px; color: var(--danger); font-size: 1.2rem; font-weight: 700; }
+.items-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.items-sum { font-size: 0.75rem; color: var(--muted); font-family: var(--font-mono); }

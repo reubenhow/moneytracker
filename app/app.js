@@ -737,6 +737,14 @@ function isDupe(d) {
   );
 }
 
+function updateItemsSum(card, d) {
+  const el = card.querySelector('[data-role="sum"]');
+  if (!el) return;
+  el.textContent = d.items.length
+    ? `items ${fmtRM(d.items.reduce((a, it) => a + Number(it.price || 0), 0))}`
+    : "";
+}
+
 function showReview(heading) {
   $("add-choices").classList.add("hidden");
   $("add-processing").classList.add("hidden");
@@ -762,8 +770,19 @@ function showReview(heading) {
         <div><label>${d.kind === "income" ? "Received via" : "Paid with"}</label><input type="text" data-f="payment_method" value="${esc(d.payment_method)}" placeholder="Cash, card…"></div>
         <div class="span2"><label>Notes</label><input type="text" data-f="notes" value="${esc(d.notes)}"></div>
       </div>
-      ${d.items.length ? `<div class="review-items">${d.items.map((it) => `
-        <div class="r-line"><span>${Number(it.qty) || 1}× ${esc(it.name)}</span><span>${fmtRM(it.price)}</span></div>`).join("")}</div>` : ""}
+      <div class="review-items">
+        ${d.items.map((it, j) => `
+        <div class="item-edit-row" data-j="${j}">
+          <input type="number" class="ie-qty" min="0" step="1" inputmode="numeric" value="${Number(it.qty) || 1}" data-if="qty" aria-label="Quantity">
+          <input type="text" class="ie-name" value="${esc(it.name)}" placeholder="Item" data-if="name">
+          <input type="number" class="ie-price" step="0.01" min="0" inputmode="decimal" value="${it.price}" data-if="price" aria-label="Price in RM">
+          <button type="button" class="ie-del" aria-label="Remove item">×</button>
+        </div>`).join("")}
+        <div class="items-foot">
+          <button type="button" class="btn-link small ie-add">+ item</button>
+          <span class="items-sum" data-role="sum"></span>
+        </div>
+      </div>
       ${reviewDrafts.length > 1 ? `<button class="btn-danger-link review-remove" data-i="${i}">Don't save this one</button>` : ""}
     </div>`).join("");
 
@@ -787,6 +806,32 @@ function showReview(heading) {
       d.category = d.kind === "income" ? "Salary" : "Other";
       showReview($("review-heading").textContent);
     })
+  );
+  holder.querySelectorAll(".item-edit-row [data-if]").forEach((inp) => {
+    inp.addEventListener("input", () => {
+      const card = inp.closest(".review-card");
+      const d = reviewDrafts[Number(card.dataset.i)];
+      const it = d.items[Number(inp.closest(".item-edit-row").dataset.j)];
+      it[inp.dataset.if] = inp.dataset.if === "name" ? inp.value : Number(inp.value);
+      updateItemsSum(card, d);
+    });
+  });
+  holder.querySelectorAll(".ie-del").forEach((b) =>
+    b.addEventListener("click", () => {
+      const card = b.closest(".review-card");
+      reviewDrafts[Number(card.dataset.i)].items.splice(Number(b.closest(".item-edit-row").dataset.j), 1);
+      showReview($("review-heading").textContent);
+    })
+  );
+  holder.querySelectorAll(".ie-add").forEach((b) =>
+    b.addEventListener("click", () => {
+      const card = b.closest(".review-card");
+      reviewDrafts[Number(card.dataset.i)].items.push({ name: "", qty: 1, price: 0 });
+      showReview($("review-heading").textContent);
+    })
+  );
+  holder.querySelectorAll(".review-card").forEach((card) =>
+    updateItemsSum(card, reviewDrafts[Number(card.dataset.i)])
   );
   holder.querySelectorAll(".review-remove").forEach((b) =>
     b.addEventListener("click", () => {
