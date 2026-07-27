@@ -285,16 +285,6 @@ function renderHome() {
   const mk = thisMonthKey();
   const monthTxs = list.filter((t) => monthKeyOf(t.tx_date) === mk);
   const total = monthTxs.reduce((s, t) => s + Number(t.total), 0);
-  const incomeMonth = all.filter((t) => !isExpense(t) && monthKeyOf(t.tx_date) === mk)
-    .reduce((s, t) => s + Number(t.total), 0);
-  const netEl = $("hero-net");
-  if (incomeMonth > 0) {
-    const net = incomeMonth - total;
-    netEl.textContent = `💰 In ${fmtRM(incomeMonth)} · Net ${net >= 0 ? "+" : "−"}${fmtRM(Math.abs(net))}`;
-    netEl.classList.remove("hidden");
-  } else {
-    netEl.classList.add("hidden");
-  }
 
   $("hero-label").textContent = scope === "ours" ? "We spent this month" : "Spent this month";
   countUp($("hero-amount"), total);
@@ -314,14 +304,7 @@ function renderHome() {
   }
 
   const paceEl = $("hero-pace");
-  if (total > 0) {
-    const now = new Date();
-    const avg = total / now.getDate();
-    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    paceEl.textContent = `${fmtRM(avg)}/day \u00B7 heading for ~${fmtRM(avg * dim)} this month`;
-  } else {
-    paceEl.textContent = "";
-  }
+  paceEl.textContent = total > 0 ? `${fmtRM(total / new Date().getDate())}/day average` : "";
 
   renderDonutCard();
   renderTrend(list);
