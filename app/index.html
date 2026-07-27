@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Money Tracker</title>
+<meta name="description" content="Snap a receipt, see where your money goes.">
+<meta name="theme-color" content="#F6F1E7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171511" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Money Tracker">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Karla:wght@400;500;600;700;800&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<script src="config.js"></script>
+</head>
+<body>
+
+<!-- ======== Config missing notice ======== -->
+<section id="screen-setup" class="fullscreen hidden">
+  <div class="setup-box">
+    <div class="brand-mark">RM</div>
+    <h1>Almost there</h1>
+    <p>This copy of Money Tracker isn't connected to its database yet.
+       Open <code>config.js</code> and paste in your Supabase URL and anon key
+       (steps are in <code>SETUP.md</code>).</p>
+  </div>
+</section>
+
+<!-- ======== Auth ======== -->
+<section id="screen-auth" class="fullscreen hidden">
+  <div class="auth-box">
+    <div class="brand-mark">RM</div>
+    <h1 class="auth-title">Money Tracker</h1>
+    <p class="auth-tag">Snap a receipt. Know where it went.</p>
+
+    <form id="auth-form" autocomplete="on">
+      <div id="auth-name-row" class="field hidden">
+        <label for="auth-name">Your name</label>
+        <input id="auth-name" type="text" maxlength="40" placeholder="e.g. Gen" autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" required placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="auth-pass">Password</label>
+        <input id="auth-pass" type="password" required minlength="6" placeholder="At least 6 characters" autocomplete="current-password">
+      </div>
+      <p id="auth-error" class="form-error hidden"></p>
+      <button type="submit" class="btn btn-primary btn-wide" id="auth-submit">Sign in</button>
+    </form>
+    <button class="btn-link" id="auth-toggle">New here? Create an account</button>
+  </div>
+</section>
+
+<!-- ======== App ======== -->
+<div id="app" class="hidden">
+
+  <header class="topbar">
+    <span class="topbar-title" id="topbar-title">Home</span>
+    <div class="scope-toggle hidden" id="scope-toggle" role="tablist" aria-label="Whose spending">
+      <button class="scope-btn active" data-scope="mine" role="tab">Mine</button>
+      <button class="scope-btn" data-scope="ours" role="tab">Ours</button>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- Home -->
+    <section class="view" id="view-home">
+      <div class="card hero-card">
+        <span class="hero-label" id="hero-label">Spent this month</span>
+        <div class="hero-amount mono" id="hero-amount">RM 0.00</div>
+        <span class="hero-delta" id="hero-delta"></span>
+      </div>
+
+      <div class="card" id="card-donut">
+        <h2 class="card-title">Where it went</h2>
+        <div class="donut-wrap">
+          <div id="donut-holder"></div>
+          <ul class="donut-legend" id="donut-legend"></ul>
+        </div>
+      </div>
+
+      <div class="card" id="card-trend">
+        <h2 class="card-title">Last 6 months</h2>
+        <div id="trend-holder"></div>
+      </div>
+
+      <div class="card" id="card-budgets">
+        <div class="card-title-row">
+          <h2 class="card-title">Budgets</h2>
+          <button class="btn-link small" data-goto="settings">Edit</button>
+        </div>
+        <div id="budget-bars"></div>
+      </div>
+
+      <div class="card" id="card-merchants">
+        <h2 class="card-title">Top places this month</h2>
+        <div id="top-merchants"></div>
+      </div>
+
+      <div class="receipt" id="month-receipt"></div>
+    </section>
+
+    <!-- Breakdown -->
+    <section class="view hidden" id="view-breakdown">
+      <div class="chips-row" id="cat-chips"></div>
+      <div class="list-controls">
+        <input type="search" id="bd-search" placeholder="Search places, items, notes…" aria-label="Search transactions">
+        <select id="bd-sort" aria-label="Sort by">
+          <option value="recent">Newest first</option>
+          <option value="added">Recently added</option>
+          <option value="high">Most expensive</option>
+          <option value="low">Least expensive</option>
+        </select>
+      </div>
+      <p class="bd-summary" id="bd-summary"></p>
+      <div id="bd-list"></div>
+    </section>
+
+    <!-- Add -->
+    <section class="view hidden" id="view-add">
+      <div id="add-choices">
+        <h2 class="add-heading">Add spending</h2>
+        <button class="add-option" id="add-camera">
+          <span class="add-option-icon">📷</span>
+          <span><strong>Snap a photo</strong><br><small>Point at a receipt</small></span>
+        </button>
+        <button class="add-option" id="add-gallery">
+          <span class="add-option-icon">🖼️</span>
+          <span><strong>From gallery</strong><br><small>Receipts or bank statements, up to 6 at once</small></span>
+        </button>
+        <button class="add-option" id="add-manual">
+          <span class="add-option-icon">✏️</span>
+          <span><strong>Type it in</strong><br><small>No photo needed</small></span>
+        </button>
+        <input type="file" id="file-camera" accept="image/*" capture="environment" class="hidden">
+        <input type="file" id="file-gallery" accept="image/*" multiple class="hidden">
+      </div>
+
+      <div id="add-processing" class="hidden">
+        <div class="spinner"></div>
+        <p id="add-processing-text">Reading your receipt…</p>
+      </div>
+
+      <div id="add-review" class="hidden">
+        <h2 class="add-heading" id="review-heading">Check &amp; save</h2>
+        <div id="review-cards"></div>
+        <div class="review-actions">
+          <button class="btn btn-primary btn-wide" id="review-save-all">Save all</button>
+          <button class="btn btn-ghost btn-wide" id="review-cancel">Discard</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Chat -->
+    <section class="view hidden" id="view-chat">
+      <div id="chat-messages"></div>
+      <div class="chat-suggestions" id="chat-suggestions"></div>
+    </section>
+
+    <!-- Settings -->
+    <section class="view hidden" id="view-settings">
+      <div class="card">
+        <h2 class="card-title">Profile</h2>
+        <div class="field">
+          <label for="set-name">Display name</label>
+          <div class="inline-field">
+            <input id="set-name" type="text" maxlength="40">
+            <button class="btn btn-small" id="set-name-save">Save</button>
+          </div>
+        </div>
+        <p class="muted" id="set-email"></p>
+      </div>
+
+      <div class="card" id="card-household"></div>
+
+      <div class="card">
+        <h2 class="card-title">Monthly budgets</h2>
+        <p class="muted">Leave a category empty for no budget. Amounts in RM.</p>
+        <div id="budget-editor"></div>
+        <button class="btn btn-small" id="budgets-save">Save budgets</button>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Your data</h2>
+        <p class="muted" id="data-count"></p>
+        <button class="btn btn-small" id="export-csv">Download CSV</button>
+      </div>
+
+      <button class="btn btn-ghost btn-wide" id="sign-out">Sign out</button>
+      <p class="about-line">Money Tracker · your photos are read once, never stored.</p>
+    </section>
+
+  </main>
+
+  <!-- Bottom nav -->
+  <nav class="bottomnav" aria-label="Main">
+    <button class="nav-btn active" data-view="home" aria-label="Home">
+      <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13v-9.5"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-btn" data-view="breakdown" aria-label="Breakdown">
+      <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>
+      <span>Breakdown</span>
+    </button>
+    <button class="nav-add" data-view="add" aria-label="Add spending">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button class="nav-btn" data-view="chat" aria-label="Chat">
+      <svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-8 8H4l2-3.2A8 8 0 1 1 21 12z"/></svg>
+      <span>Chat</span>
+    </button>
+    <button class="nav-btn" data-view="settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14.2 3h-4l-.4 2.5a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2l.4 2.5h4l.4-2.5a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.06-.4.1-.8.1-1.2z"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Chat input (fixed above nav, only on chat view) -->
+  <div class="chat-inputbar hidden" id="chat-inputbar">
+    <input type="text" id="chat-input" placeholder="Ask about your spending…" autocomplete="off">
+    <button class="btn btn-primary" id="chat-send" aria-label="Send">➤</button>
+  </div>
+</div>
+
+<!-- Transaction detail / edit modal -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal" id="modal-tx" role="dialog" aria-modal="true"></div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+<div class="viz-tooltip hidden" id="viz-tooltip"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

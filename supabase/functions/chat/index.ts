@@ -1,0 +1,100 @@
+// Money Tracker — "chat" Edge Function
+// Answers natural-language questions about the caller's spending.
+// Fetches the user's visible transactions (own + household, enforced by RLS),
+// compacts them into context, and asks OpenAI.
+
+import { createClient } from "npm:@supabase/supabase-js@2";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS, "Content-Type": "application/json" },
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+
+  const supa = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
+  );
+  const { data: { user } } = await supa.auth.getUser();
+  if (!user) return json({ error: "Not signed in" }, 401);
+
+  let message = "", history: { role: string; content: string }[] = [], scope = "mine";
+  try {
+    const body = await req.json();
+    message = String(body.message ?? "").slice(0, 2000);
+    history = Array.isArray(body.history) ? body.history.slice(-8) : [];
+    scope = body.scope === "ours" ? "ours" : "mine";
+  } catch {
+    return json({ error: "Bad request body" }, 400);
+  }
+  if (!message.trim()) return json({ error: "Empty message" }, 400);
+
+  // Member names, so "ours" answers can say who spent what.
+  const { data: profiles } = await supa.from("profiles").select("id, display_name");
+  const names = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
+
+  let q = supa
+    .from("transactions")
+    .select("user_id, tx_date, merchant, total, category, payment_method, notes")
+    .order("tx_date", { ascending: false })
+    .limit(4000);
+  if (scope === "mine") q = q.eq("user_id", user.id);
+  const { data: txs, error } = await q;
+  if (error) return json({ error: "Could not load your transactions" }, 500);
+
+  const lines = (txs ?? []).map((t) =>
+    `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.notes ? "|" + t.notes : ""}`
+  );
+
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!openaiKey) return json({ error: "OPENAI_API_KEY secret not set on the server" }, 500);
+
+  const system = `You are the assistant inside "Money Tracker", a personal spending app. Currency is RM (Malaysian Ringgit).
+Today's date: ${new Date().toISOString().slice(0, 10)}.
+The user's ${scope === "ours" ? "household's" : "own"} transactions are below, newest first, one per line:
+date|merchant|amount|category|person(|notes)
+
+<transactions>
+${lines.join("\n") || "(no transactions yet)"}
+</transactions>
+
+Answer questions using ONLY this data. Do arithmetic carefully. Format money as RM 1,234.56.
+Be warm and brief — a couple of sentences, or a short list when comparing things.
+If the data can't answer, say so plainly. Point out useful patterns (recurring charges, unusual spikes) when they're relevant to the question.`;
+
+  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: system },
+        ...history.filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) })),
+        { role: "user", content: message },
+      ],
+      max_tokens: 1000,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!resp.ok) {
+    console.error("OpenAI error:", await resp.text());
+    return json({ error: "The assistant is unavailable right now. Try again in a moment." }, 502);
+  }
+
+  const data = await resp.json();
+  return json({ reply: data.choices?.[0]?.message?.content ?? "…" });
+});
