@@ -147,23 +147,32 @@ $("auth-toggle").addEventListener("click", () => {
   $("auth-error").classList.add("hidden");
 });
 
+// Usernames ride on Supabase email auth: username -> hidden synthetic email.
+// Short passwords get deterministic padding to clear Supabase's 6-char floor.
+const toEmail = (u) => `${u}@moneytracker.local`;
+const toPass = (p) => (p.length >= 6 ? p : p + "0#mtPad".slice(0, 6 - p.length));
+
 $("auth-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const email = $("auth-email").value.trim();
-  const pass = $("auth-pass").value;
+  const username = $("auth-user").value.trim().toLowerCase();
+  const pass = toPass($("auth-pass").value);
   const btn = $("auth-submit");
   btn.disabled = true;
   $("auth-error").classList.add("hidden");
   try {
+    if (!/^[a-z0-9._-]{2,20}$/.test(username)) {
+      throw new Error("Username: 2–20 letters, numbers, dots, dashes or underscores.");
+    }
+    const email = toEmail(username);
     if (signupMode) {
-      const name = $("auth-name").value.trim() || "Someone";
+      const name = $("auth-name").value.trim() || username;
       const { error } = await supa.auth.signUp({ email, password: pass, options: { data: { display_name: name } } });
-      if (error) throw error;
+      if (error) throw new Error(/already/i.test(error.message) ? "That username is taken." : error.message);
       const { error: e2 } = await supa.auth.signInWithPassword({ email, password: pass });
-      if (e2) throw new Error("Account created — but sign-in needs email confirmation. Check your inbox (or disable 'Confirm email' in Supabase auth settings).");
+      if (e2) throw new Error("Account created but sign-in failed — make sure 'Confirm email' is OFF in Supabase auth settings.");
     } else {
       const { error } = await supa.auth.signInWithPassword({ email, password: pass });
-      if (error) throw new Error("Wrong email or password.");
+      if (error) throw new Error("Wrong username or password.");
     }
   } catch (err) {
     $("auth-error").textContent = err.message || String(err);
@@ -906,7 +915,7 @@ async function sendChat(text) {
 /* ================= SETTINGS ================= */
 function renderSettings() {
   $("set-name").value = profile?.display_name || "";
-  $("set-email").textContent = session.user.email;
+  $("set-email").textContent = "Signed in as @" + session.user.email.replace("@moneytracker.local", "");
   renderHouseholdCard();
   renderBudgetEditor();
   const mine = txs.filter((t) => t.user_id === session.user.id);

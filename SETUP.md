@@ -10,7 +10,8 @@ Three things to set up: **Supabase** (database + accounts + AI functions), an **
    - Name: `money-tracker` · pick a strong database password (you won't need it daily) · region: Singapore.
 2. Wait ~2 min for the project to spin up.
 3. **Run the schema:** left sidebar → **SQL Editor** → **New query** → paste the whole contents of `supabase/schema.sql` → **Run**. Should say "Success".
-4. **Turn off email confirmation** (so sign-up works instantly):
+4. **Turn off email confirmation** — REQUIRED, not optional: the app uses usernames, not real
+   emails (it quietly maps `gen` to `gen@moneytracker.local`), so confirmation mails can never arrive.
    - **Authentication → Sign In / Up → Email** → toggle **Confirm email** OFF → Save.
 5. **Get your keys:** **Settings → API**. Copy:
    - Project URL (like `https://abcdefgh.supabase.co`)
@@ -36,7 +37,7 @@ Three things to set up: **Supabase** (database + accounts + AI functions), an **
 
 1. Open the Netlify URL in the phone browser.
 2. **Android/Chrome:** menu ⋮ → **Add to Home screen**. **iPhone/Safari:** Share → **Add to Home Screen**.
-3. Create your account (name, email, password). Second person does the same on their phone.
+3. Create your account (username, password — anything you like). Second person does the same on their phone.
 4. One of you: **Settings → Household → Create**, share the 6-letter code; the other joins with it. Now the **Mine / Ours** toggle appears.
 
 ---
