@@ -659,7 +659,7 @@ function renderAddIdle() {
 $("add-camera").addEventListener("click", () => $("file-camera").click());
 $("add-gallery").addEventListener("click", () => $("file-gallery").click());
 $("file-camera").addEventListener("change", (e) => handleFiles([...e.target.files]));
-$("file-gallery").addEventListener("change", (e) => handleFiles([...e.target.files].slice(0, 6)));
+$("file-gallery").addEventListener("change", (e) => handleFiles([...e.target.files]));
 $("add-manual").addEventListener("click", () => {
   reviewDrafts = [blankDraft()];
   showReview("Type it in");
@@ -692,18 +692,34 @@ async function downscale(file) {
 async function handleFiles(files) {
   if (!files.length) return;
   $("file-camera").value = ""; $("file-gallery").value = "";
+  if (files.length > 30) {
+    toast("Max 30 photos at once — taking the first 30");
+    files = files.slice(0, 30);
+  }
   $("add-choices").classList.add("hidden");
   $("add-processing").classList.remove("hidden");
-  $("add-processing-text").textContent = files.length > 1 ? `Reading ${files.length} photos…` : "Reading your receipt…";
+  const setProg = (done, total) => {
+    $("add-processing-text").textContent = total > 1
+      ? `Reading photo ${Math.min(done, total)} of ${total}…`
+      : "Reading your receipt…";
+  };
+  setProg(1, files.length);
   try {
     const images = await Promise.all(files.map(downscale));
-    const { data, error } = await supa.functions.invoke("extract", { body: { images } });
-    if (error) {
-      let msg = "Couldn't read the photo.";
-      try { msg = (await error.context.json()).error || msg; } catch { /* keep default */ }
-      throw new Error(msg);
+    const found = [];
+    let failed = 0;
+    for (let i = 0; i < images.length; i += 6) {
+      const batch = images.slice(i, i + 6);
+      setProg(i + 1, images.length);
+      try {
+        const { data, error } = await supa.functions.invoke("extract", { body: { images: batch } });
+        if (error) throw error;
+        found.push(...(data.transactions || []));
+      } catch {
+        failed += batch.length;
+      }
     }
-    const found = (data.transactions || []).map((t) => ({
+    const drafts = found.map((t) => ({
       kind: "expense",
       currency: t.currency && RATES[t.currency] != null ? t.currency : "MYR",
       tx_date: t.tx_date || todayISO(),
@@ -715,13 +731,14 @@ async function handleFiles(files) {
       items: t.items || [],
       notes: t.notes || "",
     }));
-    if (!found.length) {
-      toast("Couldn't find any spending in that photo — you can type it in instead");
+    if (failed) toast(`${failed} photo${failed > 1 ? "s" : ""} couldn't be read — try those again`);
+    if (!drafts.length) {
+      if (!failed) toast("Couldn't find any spending in those photos — you can type it in instead");
       reviewDrafts = [blankDraft()];
     } else {
-      reviewDrafts = found;
+      reviewDrafts = drafts;
     }
-    showReview(found.length > 1 ? `Found ${found.length} transactions` : "Check & save");
+    showReview(drafts.length > 1 ? `Found ${drafts.length} transactions` : "Check & save");
   } catch (err) {
     toast(err.message || "Something went wrong — try again or type it in");
     renderAddIdle();
