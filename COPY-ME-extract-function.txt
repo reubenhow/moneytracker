@@ -32,6 +32,7 @@ Rules:
   · TNB, water bills, Unifi/Maxis/Celcom/Digi/U Mobile, Astro, phone top-ups, general insurance = Bills & Utilities.
   · Cinemas (GSC, TGV), hotels, flights (AirAsia, MAS), theme parks, sports, hobbies = Leisure & Travel.
   · Clothing, electronics, online shopping (Shopee, Lazada, TikTok Shop), home goods (Mr DIY, IKEA) = Shopping.
+  · "Other" is a LAST RESORT — only when nothing above fits. ALWAYS read the line items first: if they are dishes, drinks or food (pasta, burger, latte, nasi, etc.), the category is Food & Drinks no matter what the venue is called. Groceries items (raw ingredients, household goods) mean Groceries. Medicines mean Health.
 - items: line items from receipts as {name, qty, price}. Empty array for statement lines.
 - payment_method: e.g. "Cash", "Visa •1234", "Touch 'n Go", "DuitNow QR", or null.
 - notes: anything useful that doesn't fit elsewhere (e.g. "includes 6% SST"), else null.

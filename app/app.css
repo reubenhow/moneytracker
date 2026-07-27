@@ -392,7 +392,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   border-radius: 8px; padding: 6px 10px; font-size: 0.78rem; font-weight: 700;
   font-family: var(--font-body); margin-bottom: 8px;
 }
-.review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: var(--font-body); }
+.review-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; font-family: var(--font-body); }
+.review-grid > div { min-width: 0; }
+.review-grid input[type="date"] { padding: 10px 6px; font-size: 0.92rem; }
 .review-grid .span2 { grid-column: 1 / -1; }
 .review-grid label { display: block; font-size: 0.72rem; font-weight: 700; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
 .review-items { margin: 10px 0 2px; }
