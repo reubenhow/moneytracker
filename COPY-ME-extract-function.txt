@@ -18,7 +18,8 @@ const CATEGORIES = [
 const SYSTEM_PROMPT = `You extract spending data from photos of receipts and bank/card statements, mostly from Malaysia (currency RM / MYR unless clearly stated otherwise).
 
 Rules:
-- A receipt photo produces exactly ONE transaction with its line items.
+- A photo of ONE receipt produces ONE transaction with its line items.
+- A photo showing SEVERAL SEPARATE receipts at once (multiple slips laid out together, different merchants/dates/totals) produces ONE transaction PER receipt. Treat each slip independently: its own merchant, date, total and items. Never merge two slips into one transaction, and never split a single long receipt into several.
 - A bank or card statement page produces ONE transaction PER spending line (debits, purchases, payments out). SKIP incoming money: deposits, salary, refunds, transfers in.
 - tx_date: ISO YYYY-MM-DD. If the year is missing assume the most recent plausible one. If no date is visible at all, use null.
 - merchant: clean, human-readable name (e.g. "Tesco Extra Cheras", not "TESCO EXTRA CHERAS SDN BHD 003421"). For statements, clean up each line's merchant.

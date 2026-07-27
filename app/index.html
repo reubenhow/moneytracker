@@ -158,20 +158,26 @@
         </button>
         <button class="add-option" id="add-gallery" style="--cc:var(--cat-7)">
           <span class="add-option-icon">🖼️</span>
-          <span><strong>From gallery</strong><br><small>Receipts or bank statements — pick as many as you like</small></span>
+          <span><strong>From gallery</strong><br><small>Photos or PDF statements — pick as many as you like</small></span>
         </button>
         <button class="add-option" id="add-manual" style="--cc:var(--cat-4)">
           <span class="add-option-icon">✏️</span>
           <span><strong>Type it in</strong><br><small>No photo needed</small></span>
         </button>
         <input type="file" id="file-camera" accept="image/*" capture="environment" class="hidden">
-        <input type="file" id="file-gallery" accept="image/*" multiple class="hidden">
+        <input type="file" id="file-gallery" accept="image/*,application/pdf,.pdf" multiple class="hidden">
       </div>
 
       <div id="add-processing" class="hidden">
         <span class="scan-emoji">🧾</span>
         <div class="spinner"></div>
         <p id="add-processing-text">Reading your receipt…</p>
+        <div id="pdf-pass" class="hidden">
+          <p class="pdf-pass-title" id="pdf-pass-title">This PDF needs a password</p>
+          <input type="password" id="pdf-pass-input" placeholder="PDF password" autocomplete="off">
+          <button type="button" class="btn btn-primary btn-wide" id="pdf-pass-go">Unlock</button>
+          <button type="button" class="btn-link" id="pdf-pass-skip">Skip this file</button>
+        </div>
       </div>
 
       <div id="add-review" class="hidden">
@@ -251,7 +257,7 @@
       </div>
 
       <button class="btn btn-ghost btn-wide" id="sign-out">Sign out</button>
-      <p class="about-line">Money Tracker v1.4 · your photos are read once, never stored.</p>
+      <p class="about-line">Money Tracker v1.5 · your photos are read once, never stored.</p>
     </section>
 
   </main>

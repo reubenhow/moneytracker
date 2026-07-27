@@ -670,6 +670,79 @@ const blankDraft = () => ({
   category: "Other", payment_method: "", source: "manual", items: [], notes: "",
 });
 
+const PDFJS = "https://esm.sh/pdfjs-dist@4.10.38/build/pdf.min.mjs";
+let pdfjsLib = null;
+async function getPdfjs() {
+  if (!pdfjsLib) {
+    pdfjsLib = await import(PDFJS);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+  }
+  return pdfjsLib;
+}
+
+const isPdf = (f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+
+// Asks for a PDF password inside the processing pane; resolves null if skipped.
+function askPdfPassword(fileName, wrongBefore) {
+  return new Promise((resolve) => {
+    const box = $("pdf-pass"), input = $("pdf-pass-input");
+    $("pdf-pass-title").textContent = wrongBefore
+      ? `Wrong password \u2014 try again for ${fileName}`
+      : `${fileName} needs a password`;
+    input.value = "";
+    box.classList.remove("hidden");
+    input.focus();
+    const done = (val) => {
+      box.classList.add("hidden");
+      $("pdf-pass-go").removeEventListener("click", onGo);
+      $("pdf-pass-skip").removeEventListener("click", onSkip);
+      input.removeEventListener("keydown", onKey);
+      resolve(val);
+    };
+    const onGo = () => done(input.value || null);
+    const onSkip = () => done(null);
+    const onKey = (e) => { if (e.key === "Enter") onGo(); };
+    $("pdf-pass-go").addEventListener("click", onGo);
+    $("pdf-pass-skip").addEventListener("click", onSkip);
+    input.addEventListener("keydown", onKey);
+  });
+}
+
+// Renders each PDF page to a JPEG data URL the vision model can read.
+async function pdfToImages(file, onProgress) {
+  const pdfjs = await getPdfjs();
+  let password, doc, tries = 0;
+  while (!doc) {
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      doc = await pdfjs.getDocument(password ? { data, password } : { data }).promise;
+    } catch (err) {
+      if (err?.name !== "PasswordException" || tries >= 3) throw err;
+      password = await askPdfPassword(file.name, tries > 0);
+      tries++;
+      if (!password) return [];
+    }
+  }
+  const pages = Math.min(doc.numPages, 25);
+  const out = [];
+  for (let i = 1; i <= pages; i++) {
+    if (onProgress) onProgress(i, pages);
+    const page = await doc.getPage(i);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(2.5, 1700 / Math.max(base.width, base.height));
+    const vp = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    out.push(canvas.toDataURL("image/jpeg", 0.85));
+  }
+  return out;
+}
+
 async function downscale(file) {
   const url = URL.createObjectURL(file);
   try {
@@ -692,25 +765,40 @@ async function downscale(file) {
 async function handleFiles(files) {
   if (!files.length) return;
   $("file-camera").value = ""; $("file-gallery").value = "";
-  if (files.length > 30) {
-    toast("Max 30 photos at once — taking the first 30");
-    files = files.slice(0, 30);
-  }
   $("add-choices").classList.add("hidden");
   $("add-processing").classList.remove("hidden");
-  const setProg = (done, total) => {
-    $("add-processing-text").textContent = total > 1
-      ? `Reading photo ${Math.min(done, total)} of ${total}…`
-      : "Reading your receipt…";
-  };
-  setProg(1, files.length);
+  $("pdf-pass").classList.add("hidden");
+  const setText = (t) => { $("add-processing-text").textContent = t; };
+  setText(files.length > 1 ? `Preparing ${files.length} files\u2026` : "Reading your receipt\u2026");
+
   try {
-    const images = await Promise.all(files.map(downscale));
+    let images = [];
+    for (const f of files) {
+      if (isPdf(f)) {
+        setText(`Opening ${f.name}\u2026`);
+        try {
+          images.push(...await pdfToImages(f, (p, n) => setText(`Reading page ${p} of ${n} in ${f.name}\u2026`)));
+        } catch (err) {
+          console.error(err);
+          toast(`Couldn't open ${f.name}`);
+        }
+      } else {
+        images.push(await downscale(f));
+      }
+    }
+    if (!images.length) { renderAddIdle(); return; }
+    if (images.length > 30) {
+      toast("Reading the first 30 pages only");
+      images = images.slice(0, 30);
+    }
+
     const found = [];
     let failed = 0;
     for (let i = 0; i < images.length; i += 6) {
       const batch = images.slice(i, i + 6);
-      setProg(i + 1, images.length);
+      setText(images.length > 1
+        ? `Reading ${i + 1}\u2013${Math.min(i + batch.length, images.length)} of ${images.length}\u2026`
+        : "Reading your receipt\u2026");
       try {
         const { data, error } = await supa.functions.invoke("extract", { body: { images: batch } });
         if (error) throw error;
@@ -719,6 +807,7 @@ async function handleFiles(files) {
         failed += batch.length;
       }
     }
+
     const drafts = found.map((t) => ({
       kind: "expense",
       currency: t.currency && RATES[t.currency] != null ? t.currency : "MYR",
@@ -731,16 +820,16 @@ async function handleFiles(files) {
       items: t.items || [],
       notes: t.notes || "",
     }));
-    if (failed) toast(`${failed} photo${failed > 1 ? "s" : ""} couldn't be read — try those again`);
+    if (failed) toast(`${failed} page${failed > 1 ? "s" : ""} couldn't be read \u2014 try those again`);
     if (!drafts.length) {
-      if (!failed) toast("Couldn't find any spending in those photos — you can type it in instead");
+      if (!failed) toast("Couldn't find any spending in there \u2014 you can type it in instead");
       reviewDrafts = [blankDraft()];
     } else {
       reviewDrafts = drafts;
     }
     showReview(drafts.length > 1 ? `Found ${drafts.length} transactions` : "Check & save");
   } catch (err) {
-    toast(err.message || "Something went wrong — try again or type it in");
+    toast(err.message || "Something went wrong \u2014 try again or type it in");
     renderAddIdle();
   }
 }
