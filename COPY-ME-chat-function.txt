@@ -47,16 +47,20 @@ Deno.serve(async (req) => {
 
   let q = supa
     .from("transactions")
-    .select("user_id, tx_date, merchant, total, kind, category, payment_method, notes")
+    .select("user_id, tx_date, merchant, total, kind, category, payment_method, notes, items")
     .order("tx_date", { ascending: false })
     .limit(4000);
   if (scope === "mine") q = q.eq("user_id", user.id);
   const { data: txs, error } = await q;
   if (error) return json({ error: "Could not load your transactions" }, 500);
 
-  const lines = (txs ?? []).map((t) =>
-    `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.kind === "income" ? "|INCOME" : ""}${t.notes ? "|" + t.notes : ""}`
-  );
+  const lines = (txs ?? []).map((t) => {
+    const items = Array.isArray(t.items) && t.items.length
+      ? "|bought: " + t.items.map((i: { qty?: number; name?: string; price?: number }) =>
+          `${Number(i.qty) || 1}x ${i.name} (${Number(i.price || 0).toFixed(2)})`).join(", ").slice(0, 220)
+      : "";
+    return `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.kind === "income" ? "|INCOME" : ""}${t.notes ? "|" + t.notes : ""}${items}`;
+  });
 
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiKey) return json({ error: "OPENAI_API_KEY secret not set on the server" }, 500);
@@ -64,7 +68,7 @@ Deno.serve(async (req) => {
   const system = `You are the assistant inside "Money Tracker", a personal spending app. Currency is RM (Malaysian Ringgit).
 Today's date: ${new Date().toISOString().slice(0, 10)}.
 The user's ${scope === "ours" ? "household's" : "own"} transactions are below, newest first, one per line:
-date|merchant|amount|category|person(|notes)
+date|merchant|amount|category|person(|INCOME)(|notes)(|bought: line items with prices)
 
 <transactions>
 ${lines.join("\n") || "(no transactions yet)"}
