@@ -278,9 +278,20 @@ function renderHome() {
     deltaEl.textContent = monthTxs.length ? "First month tracked" : "Add your first receipt to get started";
   }
 
+  const paceEl = $("hero-pace");
+  if (total > 0) {
+    const now = new Date();
+    const avg = total / now.getDate();
+    const dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    paceEl.textContent = `${fmtRM(avg)}/day \u00B7 heading for ~${fmtRM(avg * dim)} this month`;
+  } else {
+    paceEl.textContent = "";
+  }
+
   renderDonutCard();
   renderTrend(list);
   renderBudgets();
+  renderRecurring(list);
   renderTopMerchants(monthTxs);
   renderMonthReceipt(monthTxs, total);
 }
@@ -423,6 +434,41 @@ function renderBudgets() {
       <div class="budget-track"><div class="budget-fill ${cls}" style="--p:${Math.min(ratio, 1)}"></div></div>
       ${note}</div>`;
   }).join("");
+}
+
+function renderRecurring(list) {
+  const card = $("card-recurring");
+  const byMerchant = {};
+  list.forEach((t) => {
+    const k = t.merchant.toLowerCase().trim();
+    (byMerchant[k] = byMerchant[k] || []).push(t);
+  });
+  const found = [];
+  for (const k in byMerchant) {
+    const months = {};
+    byMerchant[k].forEach((t) => {
+      const m = monthKeyOf(t.tx_date);
+      months[m] = (months[m] || 0) + Number(t.total);
+    });
+    const keys = Object.keys(months);
+    if (keys.length < 3) continue;
+    const vals = keys.map((m) => months[m]);
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    if (avg <= 0) continue;
+    if (vals.every((v) => Math.abs(v - avg) / avg < 0.25)) {
+      found.push({ name: byMerchant[k][0].merchant, category: byMerchant[k][0].category, avg, n: keys.length });
+    }
+  }
+  if (!found.length) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  found.sort((a, b) => b.avg - a.avg);
+  $("recurring-list").innerHTML = found.slice(0, 5).map((r) => `
+    <div class="rec-row">
+      <span class="cat-badge small" style="--cc:var(${catVar(r.category)})">${catOf(r.category).e}</span>
+      <span class="rec-mid"><span class="rec-name">${esc(r.name)}</span><br>
+      <span class="rec-sub">${r.n} months running</span></span>
+      <span class="rec-amt mono">${fmtRM(r.avg)}<small>/month</small></span>
+    </div>`).join("");
 }
 
 function renderTopMerchants(monthTxs) {
@@ -974,6 +1020,7 @@ function renderStats() {
       <div class="st-sub">${topCat ? fmtRM(topCat[1]) : ""}</div></div>`;
 
   renderStatsChart(cur, info);
+  renderHeat(cur, info);
   renderStatsCats(byCatMap, total);
   renderStatsList(cur);
 }
@@ -1024,6 +1071,39 @@ function renderStatsChart(cur, info) {
   holder.querySelectorAll(".trend-bar").forEach((el) => {
     const b = buckets[Number(el.dataset.i)];
     bindTip(el, `${statsGran === "year" ? MONTHS[Number(el.dataset.i)] : b.label} \u00B7 ${fmtRM(b.sum)}`);
+  });
+}
+
+function renderHeat(cur, info) {
+  const card = $("stats-heat-card");
+  if (statsGran !== "month") { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  $("heat-week").innerHTML = ["M", "T", "W", "T", "F", "S", "S"].map((d) => `<span>${d}</span>`).join("");
+  const days = info.end.getDate();
+  const sums = Array(days + 1).fill(0);
+  cur.forEach((t) => { sums[Number(t.tx_date.slice(8, 10))] += Number(t.total); });
+  const max = Math.max(...sums, 1);
+  const lead = (info.start.getDay() + 6) % 7;
+  const today = new Date();
+  const isThisMonth = today.getFullYear() === info.start.getFullYear() && today.getMonth() === info.start.getMonth();
+  let html = "";
+  for (let i = 0; i < lead; i++) html += "<span></span>";
+  for (let d = 1; d <= days; d++) {
+    const r = sums[d] / max;
+    const pct = sums[d] > 0 ? Math.round(15 + 65 * r) : 0;
+    const cls = `heat-cell ${sums[d] > 0 ? "has" : ""} ${r > 0.55 ? "hot" : ""} ${isThisMonth && d === today.getDate() ? "today" : ""}`;
+    html += `<button class="${cls}" data-d="${d}" ${pct ? `style="background:color-mix(in srgb, var(--trend) ${pct}%, var(--card))"` : "disabled"}>${d}</button>`;
+  }
+  $("heat-grid").innerHTML = html;
+  $("heat-grid").querySelectorAll(".heat-cell.has").forEach((cell) => {
+    const d = Number(cell.dataset.d);
+    bindTip(cell, `${d} ${MONTHS[info.start.getMonth()]} \u00B7 ${fmtRM(sums[d])}`);
+    cell.addEventListener("click", () => {
+      statsGran = "day";
+      statsAnchor = new Date(info.start.getFullYear(), info.start.getMonth(), d);
+      document.querySelectorAll("#stats-gran button").forEach((x) => x.classList.toggle("active", x.dataset.g === "day"));
+      renderStats();
+    });
   });
 }
 

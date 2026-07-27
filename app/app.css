@@ -531,3 +531,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .tappable { cursor: pointer; }
 @media (hover: hover) { .tappable:hover { box-shadow: var(--shadow-pop); } }
 .card-more { font-size: 0.8rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+/* pace line in hero */
+.hero-pace { display: block; font-size: 0.78rem; font-weight: 600; color: rgba(255, 255, 255, 0.75); margin-top: 8px; }
+
+/* recurring card */
+.rec-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--hairline); }
+.rec-row:last-child { border-bottom: none; }
+.rec-mid { flex: 1; min-width: 0; }
+.rec-name { font-weight: 700; font-size: 0.95rem; }
+.rec-sub { font-size: 0.78rem; color: var(--muted); }
+.rec-amt { font-weight: 600; flex: 0 0 auto; text-align: right; }
+.rec-amt small { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 700; }
+
+/* calendar heatmap */
+.heat-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.heat-week span { text-align: center; font-size: 0.65rem; font-weight: 800; color: var(--muted); }
+.heat-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.heat-cell {
+  aspect-ratio: 1; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+  font-size: 0.72rem; font-weight: 700; background: color-mix(in srgb, var(--ink) 4%, var(--page));
+  color: var(--muted); border: none; padding: 0;
+}
+.heat-cell.has { color: var(--ink); cursor: pointer; }
+.heat-cell.hot { color: #fff; }
+.heat-cell.today { outline: 2px solid var(--accent); outline-offset: -2px; }

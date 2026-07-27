@@ -85,6 +85,7 @@
         <span class="hero-label" id="hero-label">Spent this month</span>
         <div class="hero-amount mono" id="hero-amount">RM 0.00</div>
         <span class="hero-delta" id="hero-delta"></span>
+        <span class="hero-pace" id="hero-pace"></span>
       </div>
 
       <div class="card" id="card-donut">
@@ -116,6 +117,11 @@
           <button class="btn-link small" data-goto="settings">Edit</button>
         </div>
         <div id="budget-bars"></div>
+      </div>
+
+      <div class="card hidden" id="card-recurring">
+        <h2 class="card-title"><span class="t-emoji">🔁</span>Repeats every month</h2>
+        <div id="recurring-list"></div>
       </div>
 
       <div class="card" id="card-merchants">
@@ -195,6 +201,11 @@
       <div class="card" id="stats-chart-card">
         <h2 class="card-title" id="stats-chart-title">Spending</h2>
         <div id="stats-chart"></div>
+      </div>
+      <div class="card hidden" id="stats-heat-card">
+        <h2 class="card-title"><span class="t-emoji">🗓️</span>Daily heatmap</h2>
+        <div class="heat-week" id="heat-week"></div>
+        <div class="heat-grid" id="heat-grid"></div>
       </div>
       <div class="card">
         <h2 class="card-title"><span class="t-emoji">🧭</span>By category</h2>
