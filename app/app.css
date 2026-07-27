@@ -584,3 +584,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .kind-toggle button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .fx-hint { display: block; font-size: 0.72rem; color: var(--muted); font-weight: 700; margin-top: 3px; font-family: var(--font-body); }
 .tx-amt.inc { color: var(--delta-good); }
+
+/* date+total side by side, collision-proof */
+.duo { display: flex; gap: 8px; }
+.duo > .duo-date { flex: 0 0 46%; min-width: 0; overflow: hidden; }
+.duo > .duo-total { flex: 1; min-width: 0; overflow: hidden; }
+.duo input { width: 100%; max-width: 100%; min-width: 0; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
