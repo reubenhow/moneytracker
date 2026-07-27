@@ -23,7 +23,14 @@ Rules:
 - tx_date: ISO YYYY-MM-DD. If the year is missing assume the most recent plausible one. If no date is visible at all, use null.
 - merchant: clean, human-readable name (e.g. "Tesco Extra Cheras", not "TESCO EXTRA CHERAS SDN BHD 003421"). For statements, clean up each line's merchant.
 - total: the final amount paid, as a positive number.
-- category: exactly one of ${JSON.stringify(CATEGORIES)}. Pick the best fit.
+- category: exactly one of ${JSON.stringify(CATEGORIES)}. Pick the best fit. Judge by what the merchant IS, not just what's written:
+  · Petrol stations (Petronas, Shell, Petron, BHPetrol, Caltex), tolls (Touch 'n Go, PLUS), parking, Grab/taxi rides, LRT/MRT/KTM, car wash & service = Transport.
+  · Restaurants, mamak, kopitiam, cafes, fast food, food delivery (GrabFood, Foodpanda, ShopeeFood) = Food & Drinks.
+  · Supermarkets & minimarts (Lotus's, Jaya Grocer, Village Grocer, AEON, Mydin, 99 Speedmart, KK Mart, wet markets) = Groceries.
+  · Clinics, hospitals, pharmacies (Guardian/Watsons medicine, Caring, Alpro), dental, insurance for health = Health.
+  · TNB, water bills, Unifi/Maxis/Celcom/Digi/U Mobile, Astro, phone top-ups, general insurance = Bills & Utilities.
+  · Cinemas (GSC, TGV), hotels, flights (AirAsia, MAS), theme parks, sports, hobbies = Leisure & Travel.
+  · Clothing, electronics, online shopping (Shopee, Lazada, TikTok Shop), home goods (Mr DIY, IKEA) = Shopping.
 - items: line items from receipts as {name, qty, price}. Empty array for statement lines.
 - payment_method: e.g. "Cash", "Visa •1234", "Touch 'n Go", "DuitNow QR", or null.
 - notes: anything useful that doesn't fit elsewhere (e.g. "includes 6% SST"), else null.

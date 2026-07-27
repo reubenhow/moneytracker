@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Money Tracker</title>
 <meta name="description" content="Snap a receipt, see where your money goes.">
-<meta name="theme-color" content="#F6F1E7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#171511" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F6F1E7" id="meta-theme">
+<script>document.documentElement.dataset.theme = localStorage.getItem("mt_theme") || "light";</script>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -34,6 +34,12 @@
 
 <!-- ======== Auth ======== -->
 <section id="screen-auth" class="fullscreen hidden">
+  <span class="float-emoji" style="top:8%;left:10%">💸</span>
+  <span class="float-emoji" style="top:14%;right:12%;animation-delay:1.2s">🧾</span>
+  <span class="float-emoji" style="bottom:18%;left:14%;animation-delay:2.4s">🪙</span>
+  <span class="float-emoji" style="bottom:10%;right:10%;animation-delay:0.6s">🛒</span>
+  <span class="float-emoji" style="top:46%;left:4%;animation-delay:3.1s">⛽</span>
+  <span class="float-emoji" style="top:40%;right:5%;animation-delay:1.8s">🍜</span>
   <div class="auth-box">
     <div class="brand-mark">RM</div>
     <h1 class="auth-title">Money Tracker</h1>
@@ -64,6 +70,7 @@
 
   <header class="topbar">
     <span class="topbar-title" id="topbar-title">Home</span>
+    <button class="theme-btn" id="theme-btn" aria-label="Switch between light and dark mode">🌙</button>
     <div class="scope-toggle hidden" id="scope-toggle" role="tablist" aria-label="Whose spending">
       <button class="scope-btn active" data-scope="mine" role="tab">Mine</button>
       <button class="scope-btn" data-scope="ours" role="tab">Ours</button>
@@ -81,7 +88,7 @@
       </div>
 
       <div class="card" id="card-donut">
-        <h2 class="card-title">Where it went</h2>
+        <h2 class="card-title"><span class="t-emoji">🍩</span>Where it went</h2>
         <div class="donut-wrap">
           <div id="donut-holder"></div>
           <ul class="donut-legend" id="donut-legend"></ul>
@@ -89,20 +96,20 @@
       </div>
 
       <div class="card" id="card-trend">
-        <h2 class="card-title">Last 6 months</h2>
+        <h2 class="card-title"><span class="t-emoji">📊</span>Last 6 months</h2>
         <div id="trend-holder"></div>
       </div>
 
       <div class="card" id="card-budgets">
         <div class="card-title-row">
-          <h2 class="card-title">Budgets</h2>
+          <h2 class="card-title"><span class="t-emoji">🎯</span>Budgets</h2>
           <button class="btn-link small" data-goto="settings">Edit</button>
         </div>
         <div id="budget-bars"></div>
       </div>
 
       <div class="card" id="card-merchants">
-        <h2 class="card-title">Top places this month</h2>
+        <h2 class="card-title"><span class="t-emoji">🏆</span>Top places this month</h2>
         <div id="top-merchants"></div>
       </div>
 
@@ -129,15 +136,15 @@
     <section class="view hidden" id="view-add">
       <div id="add-choices">
         <h2 class="add-heading">Add spending</h2>
-        <button class="add-option" id="add-camera">
+        <button class="add-option" id="add-camera" style="--cc:var(--cat-3)">
           <span class="add-option-icon">📷</span>
           <span><strong>Snap a photo</strong><br><small>Point at a receipt</small></span>
         </button>
-        <button class="add-option" id="add-gallery">
+        <button class="add-option" id="add-gallery" style="--cc:var(--cat-7)">
           <span class="add-option-icon">🖼️</span>
           <span><strong>From gallery</strong><br><small>Receipts or bank statements, up to 6 at once</small></span>
         </button>
-        <button class="add-option" id="add-manual">
+        <button class="add-option" id="add-manual" style="--cc:var(--cat-4)">
           <span class="add-option-icon">✏️</span>
           <span><strong>Type it in</strong><br><small>No photo needed</small></span>
         </button>
@@ -146,6 +153,7 @@
       </div>
 
       <div id="add-processing" class="hidden">
+        <span class="scan-emoji">🧾</span>
         <div class="spinner"></div>
         <p id="add-processing-text">Reading your receipt…</p>
       </div>

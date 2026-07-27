@@ -15,16 +15,17 @@ const supa = createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
 
 /* ---------- constants ---------- */
 const CATEGORIES = [
-  { name: "Food & Drinks", v: "--cat-1" },
-  { name: "Groceries", v: "--cat-2" },
-  { name: "Transport", v: "--cat-3" },
-  { name: "Shopping", v: "--cat-4" },
-  { name: "Bills & Utilities", v: "--cat-5" },
-  { name: "Health", v: "--cat-6" },
-  { name: "Leisure & Travel", v: "--cat-7" },
-  { name: "Other", v: "--cat-8" },
+  { name: "Food & Drinks", v: "--cat-1", e: "🍜" },
+  { name: "Groceries", v: "--cat-2", e: "🛒" },
+  { name: "Transport", v: "--cat-3", e: "⛽" },
+  { name: "Shopping", v: "--cat-4", e: "🛍️" },
+  { name: "Bills & Utilities", v: "--cat-5", e: "💡" },
+  { name: "Health", v: "--cat-6", e: "💊" },
+  { name: "Leisure & Travel", v: "--cat-7", e: "✈️" },
+  { name: "Other", v: "--cat-8", e: "🧾" },
 ];
-const catVar = (name) => (CATEGORIES.find((c) => c.name === name) || CATEGORIES[7]).v;
+const catOf = (name) => CATEGORIES.find((c) => c.name === name) || CATEGORIES[7];
+const catVar = (name) => catOf(name).v;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /* ---------- state ---------- */
@@ -50,6 +51,37 @@ const fmtDate = (iso) => {
 };
 const memberName = (uid) => (members.find((m) => m.id === uid) || {}).display_name || (uid === session?.user?.id ? "Me" : "Someone");
 
+let heroAnim;
+function countUp(el, target) {
+  cancelAnimationFrame(heroAnim);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || target <= 0) {
+    el.textContent = fmtRM(target);
+    return;
+  }
+  const t0 = performance.now(), dur = 700;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur);
+    el.textContent = fmtRM(target * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) heroAnim = requestAnimationFrame(step);
+  };
+  heroAnim = requestAnimationFrame(step);
+}
+
+function confetti() {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const EMO = ["🎉", "💸", "🪙", "✨"];
+  for (let i = 0; i < 18; i++) {
+    const b = document.createElement("span");
+    b.className = "confetti-bit";
+    b.textContent = EMO[i % EMO.length];
+    b.style.left = (6 + Math.random() * 88) + "vw";
+    b.style.top = (8 + Math.random() * 22) + "vh";
+    b.style.animationDelay = (Math.random() * 0.3) + "s";
+    document.body.appendChild(b);
+    setTimeout(() => b.remove(), 1900);
+  }
+}
+
 let toastTimer;
 function toast(msg) {
   const t = $("toast");
@@ -74,6 +106,19 @@ function bindTip(el, text) {
   el.addEventListener("mouseleave", () => tip.classList.add("hidden"));
   el.addEventListener("touchstart", (e) => { show(e); setTimeout(() => tip.classList.add("hidden"), 1600); }, { passive: true });
 }
+
+/* ---------- theme ---------- */
+const themeBtn = $("theme-btn");
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  localStorage.setItem("mt_theme", t);
+  themeBtn.textContent = t === "dark" ? "🌞" : "🌙";
+  document.getElementById("meta-theme").setAttribute("content", t === "dark" ? "#171511" : "#F6F1E7");
+}
+applyTheme(localStorage.getItem("mt_theme") || "light");
+themeBtn.addEventListener("click", () =>
+  applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark")
+);
 
 /* ---------- auth ---------- */
 $("auth-toggle").addEventListener("click", () => {
@@ -211,7 +256,7 @@ function renderHome() {
   const total = monthTxs.reduce((s, t) => s + Number(t.total), 0);
 
   $("hero-label").textContent = scope === "ours" ? "We spent this month" : "Spent this month";
-  $("hero-amount").textContent = fmtRM(total);
+  countUp($("hero-amount"), total);
 
   // delta vs last month
   const last = new Date(); last.setDate(1); last.setMonth(last.getMonth() - 1);
@@ -284,7 +329,7 @@ function renderDonut(monthTxs, total) {
 
   legend.innerHTML = byCat.map((c) => `
     <li><span class="legend-dot" style="background:var(${c.v})"></span>
-    <span class="legend-name">${esc(c.name)}</span>
+    <span class="legend-name">${c.e} ${esc(c.name)}</span>
     <span class="legend-val mono">${fmtRM(c.sum)}</span></li>`).join("");
 }
 
@@ -346,7 +391,7 @@ function renderBudgets() {
         ? `<div class="budget-note warn">◔ ${fmtRM(b.monthly_limit - spent)} left — nearly there</div>`
         : "";
     return `<div class="budget-row">
-      <div class="budget-head"><span>${esc(b.category)}</span>
+      <div class="budget-head"><span class="b-name">${catOf(b.category).e} ${esc(b.category)}</span>
       <span class="spent mono">${fmtRM(spent)} / ${fmtRM(b.monthly_limit)}</span></div>
       <div class="budget-track"><div class="budget-fill ${cls}" style="--p:${Math.min(ratio, 1)}"></div></div>
       ${note}</div>`;
@@ -363,8 +408,9 @@ function renderTopMerchants(monthTxs) {
   });
   const top = Object.entries(by).sort((a, b) => b[1].sum - a[1].sum).slice(0, 3);
   holder.innerHTML = top.length
-    ? top.map(([name, d]) => `<div class="merchant-row">
-        <span><span class="m-name">${esc(name)}</span><br><span class="m-sub">${d.n} visit${d.n > 1 ? "s" : ""}</span></span>
+    ? top.map(([name, d], i) => `<div class="merchant-row">
+        <span class="m-rank">${["🥇", "🥈", "🥉"][i]}</span>
+        <span class="m-mid"><span class="m-name">${esc(name)}</span><br><span class="m-sub">${d.n} visit${d.n > 1 ? "s" : ""}</span></span>
         <span class="m-amt mono">${fmtRM(d.sum)}</span></div>`).join("")
     : `<p class="muted">No spending yet this month.</p>`;
 }
@@ -399,10 +445,11 @@ $("bd-sort").addEventListener("change", (e) => { bdSort = e.target.value; render
 function renderBreakdown() {
   const chips = $("cat-chips");
   const names = ["All", ...CATEGORIES.map((c) => c.name)];
-  chips.innerHTML = names.map((n) => `
-    <button class="chip ${bdCat === n ? "active" : ""}" data-cat="${esc(n)}">
-      ${n !== "All" ? `<span class="chip-dot" style="background:var(${catVar(n)})"></span>` : ""}${esc(n)}
-    </button>`).join("");
+  chips.innerHTML = names.map((n) => {
+    const c = n === "All" ? null : catOf(n);
+    return `<button class="chip ${n === "All" ? "chip-all" : ""} ${bdCat === n ? "active" : ""}"
+      ${c ? `style="--cc:var(${c.v})"` : ""} data-cat="${esc(n)}">${c ? c.e : "✨"} ${esc(n)}</button>`;
+  }).join("");
   chips.querySelectorAll(".chip").forEach((c) =>
     c.addEventListener("click", () => { bdCat = c.dataset.cat; renderBreakdown(); })
   );
@@ -432,12 +479,12 @@ function renderBdList() {
 
   const holder = $("bd-list");
   if (!list.length) {
-    holder.innerHTML = `<p class="empty-note">${bdSearch || bdCat !== "All" ? "Nothing matches. Try another category or search." : "No spending saved yet. Tap + to add your first."}</p>`;
+    holder.innerHTML = `<p class="empty-note"><span class="big">${bdSearch || bdCat !== "All" ? "🔍" : "🌱"}</span>${bdSearch || bdCat !== "All" ? "Nothing matches. Try another category or search." : "No spending saved yet. Tap + to add your first."}</p>`;
     return;
   }
   holder.innerHTML = list.map((t) => `
     <button class="tx-row" data-id="${t.id}">
-      <span class="tx-cat-dot" style="background:var(${catVar(t.category)})"></span>
+      <span class="cat-badge" style="--cc:var(${catVar(t.category)})">${catOf(t.category).e}</span>
       <span class="tx-mid">
         <span class="tx-merchant">${esc(t.merchant)}</span><br>
         <span class="tx-sub">${fmtDate(t.tx_date)} · ${esc(t.category)}${scope === "ours" && members.length > 1 ? " · " + esc(memberName(t.user_id)) : ""}</span>
@@ -456,14 +503,14 @@ function openTxModal(tx) {
   const modal = $("modal-tx");
   const items = (tx.items || []);
   modal.innerHTML = `
-    <div class="modal-title">${esc(tx.merchant)}</div>
+    <div class="modal-title"><span>${catOf(tx.category).e}</span>${esc(tx.merchant)}</div>
     <div class="modal-sub">${fmtDate(tx.tx_date)} · ${esc(tx.source)} · added by ${esc(memberName(tx.user_id))}</div>
     ${own ? `
     <div class="review-grid">
       <div><label>Date</label><input type="date" id="m-date" value="${esc(tx.tx_date || "")}"></div>
       <div><label>Total (RM)</label><input type="number" step="0.01" min="0" id="m-total" value="${Number(tx.total)}"></div>
       <div class="span2"><label>Place</label><input type="text" id="m-merchant" value="${esc(tx.merchant)}"></div>
-      <div><label>Category</label><select id="m-cat">${CATEGORIES.map((c) => `<option ${c.name === tx.category ? "selected" : ""}>${c.name}</option>`).join("")}</select></div>
+      <div><label>Category</label><select id="m-cat">${CATEGORIES.map((c) => `<option value="${c.name}" ${c.name === tx.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
       <div><label>Paid with</label><input type="text" id="m-pay" value="${esc(tx.payment_method || "")}" placeholder="Cash, card…"></div>
       <div class="span2"><label>Notes</label><input type="text" id="m-notes" value="${esc(tx.notes || "")}"></div>
     </div>` : `
@@ -603,7 +650,7 @@ function showReview(heading) {
         <div class="span2"><label>Place</label><input type="text" data-f="merchant" value="${esc(d.merchant)}" placeholder="Where was this?"></div>
         <div><label>Date</label><input type="date" data-f="tx_date" value="${esc(d.tx_date)}"></div>
         <div><label>Total (RM)</label><input type="number" step="0.01" min="0" inputmode="decimal" data-f="total" value="${d.total}" placeholder="0.00"></div>
-        <div><label>Category</label><select data-f="category">${CATEGORIES.map((c) => `<option ${c.name === d.category ? "selected" : ""}>${c.name}</option>`).join("")}</select></div>
+        <div><label>Category</label><select data-f="category">${CATEGORIES.map((c) => `<option value="${c.name}" ${c.name === d.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
         <div><label>Paid with</label><input type="text" data-f="payment_method" value="${esc(d.payment_method)}" placeholder="Cash, card…"></div>
         <div class="span2"><label>Notes</label><input type="text" data-f="notes" value="${esc(d.notes)}"></div>
       </div>
@@ -655,24 +702,28 @@ $("review-save-all").addEventListener("click", async () => {
   localStorage.setItem("mt_cache", JSON.stringify({ profile, household, members, txs, budgets }));
   reviewDrafts = [];
   toast(`Saved ${data.length} ${data.length === 1 ? "entry" : "entries"} ✓`);
+  confetti();
   switchView("home");
 });
 
 /* ================= CHAT ================= */
 const SUGGESTIONS = [
-  "What's my biggest spending this month?",
-  "How much did I spend on food this month?",
-  "Compare this month with last month",
-  "Any recurring charges I should know about?",
-  "What was my most expensive day?",
+  "💥 What's my biggest spending this month?",
+  "🍜 How much did I spend on food this month?",
+  "📅 Compare this month with last month",
+  "🔁 Any recurring charges I should know about?",
+  "💳 What was my most expensive day?",
 ];
 
 function renderChat() {
   const box = $("chat-messages");
-  box.innerHTML = chatMsgs.map((m) => `<div class="msg ${m.role === "user" ? "user" : "bot"}">${esc(m.content)}</div>`).join("");
+  const wrapMsg = (m) => m.role === "user"
+    ? `<div class="msg-row user"><div class="msg user">${esc(m.content)}</div></div>`
+    : `<div class="msg-row"><span class="bot-avatar">💸</span><div class="msg bot">${esc(m.content)}</div></div>`;
+  box.innerHTML = chatMsgs.map(wrapMsg).join("");
   const sug = $("chat-suggestions");
   if (!chatMsgs.length) {
-    box.innerHTML = `<div class="msg bot">Hi! Ask me anything about your spending — where the money went, when you last visited a place, what's creeping up…</div>`;
+    box.innerHTML = `<div class="msg-row"><span class="bot-avatar">💸</span><div class="msg bot">Hi! Ask me anything about your spending — where the money went, when you last visited a place, what's creeping up…</div></div>`;
     sug.innerHTML = SUGGESTIONS.map((s) => `<button class="chip">${esc(s)}</button>`).join("");
     sug.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => sendChat(c.textContent)));
   } else {
@@ -695,8 +746,8 @@ async function sendChat(text) {
   renderChat();
   const box = $("chat-messages");
   const typing = document.createElement("div");
-  typing.className = "msg bot typing";
-  typing.textContent = "thinking…";
+  typing.className = "msg-row";
+  typing.innerHTML = `<span class="bot-avatar">💸</span><div class="msg bot typing">thinking…</div>`;
   box.appendChild(typing);
   window.scrollTo(0, document.body.scrollHeight);
   try {
