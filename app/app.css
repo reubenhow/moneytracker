@@ -609,3 +609,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 #pdf-pass { max-width: 280px; margin: 18px auto 0; text-align: center; }
 .pdf-pass-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 10px; color: var(--ink); }
 #pdf-pass input { margin-bottom: 10px; text-align: center; }
+
+/* item-sum verification */
+.items-sum.sum-bad { color: var(--status-crit); font-weight: 700; }
+.dupe-flag.sum-flag { background: color-mix(in srgb, var(--status-crit) 16%, var(--card)); }

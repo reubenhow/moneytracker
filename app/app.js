@@ -696,7 +696,7 @@ $("add-manual").addEventListener("click", () => {
 });
 
 const blankDraft = () => ({
-  kind: "expense", tx_date: todayISO(), merchant: "", total: "", currency: "MYR",
+  kind: "expense", tx_date: todayISO(), merchant: "", total: "", currency: "MYR", subtotal: null,
   category: "Other", payment_method: "", source: "manual", items: [], notes: "",
 });
 
@@ -841,6 +841,7 @@ async function handleFiles(files) {
     const drafts = found.map((t) => ({
       kind: "expense",
       currency: t.currency && RATES[t.currency] != null ? t.currency : "MYR",
+      subtotal: typeof t.subtotal === "number" ? t.subtotal : null,
       tx_date: t.tx_date || todayISO(),
       merchant: t.merchant || "",
       total: t.total ?? "",
@@ -864,6 +865,12 @@ async function handleFiles(files) {
   }
 }
 
+function itemsOff(d) {
+  if (!d.items?.length || typeof d.subtotal !== "number" || !(d.subtotal > 0)) return false;
+  const sum = d.items.reduce((a, it) => a + Number(it.price || 0), 0);
+  return Math.abs(sum - d.subtotal) > 0.05;
+}
+
 function isDupe(d) {
   return txs.some((t) =>
     t.user_id === session.user.id &&
@@ -876,9 +883,20 @@ function isDupe(d) {
 function updateItemsSum(card, d) {
   const el = card.querySelector('[data-role="sum"]');
   if (!el) return;
-  el.textContent = d.items.length
-    ? `items ${fmtRM(d.items.reduce((a, it) => a + Number(it.price || 0), 0))}`
-    : "";
+  if (!d.items.length) { el.textContent = ""; el.className = "items-sum"; return; }
+  const sum = d.items.reduce((a, it) => a + Number(it.price || 0), 0);
+  const off = typeof d.subtotal === "number" && d.subtotal > 0 && Math.abs(sum - d.subtotal) > 0.05;
+  el.textContent = off
+    ? `items ${fmtRM(sum)} ≠ receipt ${fmtRM(d.subtotal)}`
+    : `items ${fmtRM(sum)}`;
+  el.className = off ? "items-sum sum-bad" : "items-sum";
+  const flag = card.querySelector(".sum-flag");
+  if (flag) {
+    flag.classList.toggle("hidden", !off);
+    if (off) {
+      flag.textContent = `Item prices add up to ${fmtRM(sum)}, but the receipt says ${fmtRM(d.subtotal)} — tap a line to fix. The total below is still correct.`;
+    }
+  }
 }
 
 function showReview(heading) {
@@ -890,6 +908,7 @@ function showReview(heading) {
   holder.innerHTML = reviewDrafts.map((d, i) => `
     <div class="receipt review-card" data-i="${i}">
       ${isDupe(d) ? `<div class="dupe-flag">Looks like a duplicate of one you already saved</div>` : ""}
+      <div class="dupe-flag sum-flag ${itemsOff(d) ? "" : "hidden"}"></div>
       <div class="review-grid">
         <div class="span2 kind-toggle">
           <button type="button" class="${d.kind !== "income" ? "active" : ""}" data-kind="expense" data-i="${i}">💸 Spending</button>

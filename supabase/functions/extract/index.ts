@@ -1,6 +1,11 @@
 // Money Tracker — "extract" Edge Function
 // Receives receipt / bank-statement photos (base64 data URLs), sends them to
 // OpenAI vision, returns structured transactions. Images are never stored.
+//
+// Accuracy comes from CODE, not from the model's own self-assessment: item
+// prices are summed here and compared to the printed subtotal. A mismatch
+// triggers one corrective re-read, and anything still off is flagged so the
+// app can warn the user instead of silently saving wrong numbers.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -23,7 +28,8 @@ Rules:
 - A bank or card statement page produces ONE transaction PER spending line (debits, purchases, payments out). SKIP incoming money: deposits, salary, refunds, transfers in.
 - tx_date: ISO YYYY-MM-DD. If the year is missing assume the most recent plausible one. If no date is visible at all, use null.
 - merchant: clean, human-readable name (e.g. "Tesco Extra Cheras", not "TESCO EXTRA CHERAS SDN BHD 003421"). For statements, clean up each line's merchant.
-- total: the final amount paid, as a positive number, in the document's own currency.
+- total: the final amount actually paid (after service charge, tax and rounding), as a positive number, in the document's own currency.
+- subtotal: the printed subtotal / "Total Sales" BEFORE service charge, tax and rounding, copied exactly as printed. Use null only when the document prints no subtotal at all (usual for statement lines).
 - currency: ISO 4217 code of the money on the document (MYR for Malaysian receipts; the printed currency for foreign receipts, e.g. THB, SGD, JPY).
 - category: exactly one of ${JSON.stringify(CATEGORIES)}. Pick the best fit. Judge by what the merchant IS, not just what's written:
   · Petrol stations (Petronas, Shell, Petron, BHPetrol, Caltex), tolls (Touch 'n Go, PLUS), parking, Grab/taxi rides, LRT/MRT/KTM, car wash & service = Transport.
@@ -35,11 +41,12 @@ Rules:
   · Clothing, electronics, online shopping (Shopee, Lazada, TikTok Shop), home goods (Mr DIY, IKEA) = Shopping.
   · "Other" is a LAST RESORT — only when nothing above fits. ALWAYS read the line items first: if they are dishes, drinks or food (pasta, burger, latte, nasi, etc.), the category is Food & Drinks no matter what the venue is called. Groceries items (raw ingredients, household goods) mean Groceries. Medicines mean Health.
 - items: line items from receipts as {name, qty, price}. Empty array for statement lines.
-  IMPORTANT — the standard layout is: item NAME on one line, then its price/qty/amount on the line(s) BELOW it, then any modifier lines (Iced, Medium Well, "NO ...", special requests — these never have prices). Attach every price to the item name printed ABOVE it.
-  Photos are often tilted: in a skewed photo a price line can APPEAR to sit horizontally beside the NEXT item's name. That apparent alignment is an artifact — follow the receipt's top-to-bottom structure, never the photo's visual rows.
-  SELF-CHECK: item prices must sum to the printed subtotal / "Total Sales" (before service charge, tax, rounding). If they don't, your name-price pairing is off — redo it.
-- payment_method: e.g. "Cash", "Visa •1234", "Touch 'n Go", "DuitNow QR", or null.
-- notes: anything useful that doesn't fit elsewhere (e.g. "includes 6% SST"), else null.
+  price is the AMOUNT for that whole line (quantity already included — what that line contributes to the subtotal), not a unit price.
+  Read the item block ONE LINE AT A TIME. Most receipts print the name and its amount on the SAME line, name left, amount right. Some print the amount on the line BELOW the name; modifier lines (Iced, Medium Well, "NO ...", special requests) belong to the item above them and never carry a price of their own. Work out which of these two layouts the receipt uses before assigning any price.
+  Photos are often tilted: in a skewed photo an amount can APPEAR to sit beside a neighbouring item's name. That apparent alignment is an artifact — follow the receipt's own structure, never the photo's visual rows.
+  The item amounts MUST add up to the printed subtotal. This is verified mechanically after you answer, so a wrong pairing will be caught and sent back to you.
+- payment_method: how it was actually paid, read from the payment/tender line near the bottom (e.g. "Cash", "Credit card", "Visa •1234", "Touch 'n Go", "DuitNow QR") — never a cashier or staff name printed in the header. Null if not shown.
+- notes: anything useful that doesn't fit elsewhere (e.g. "includes 10% service charge and 6% SST", "5 pax"), else null.
 - If an image is unreadable or contains no spending data, contribute no transactions from it.`;
 
 const RESPONSE_SCHEMA = {
@@ -60,6 +67,7 @@ const RESPONSE_SCHEMA = {
               tx_date: { type: ["string", "null"] },
               merchant: { type: "string" },
               total: { type: "number" },
+              subtotal: { type: ["number", "null"] },
               currency: { type: "string" },
               category: { type: "string", enum: CATEGORIES },
               payment_method: { type: ["string", "null"] },
@@ -79,7 +87,7 @@ const RESPONSE_SCHEMA = {
               },
               notes: { type: ["string", "null"] },
             },
-            required: ["tx_date", "merchant", "total", "currency", "category", "payment_method", "source", "items", "notes"],
+            required: ["tx_date", "merchant", "total", "subtotal", "currency", "category", "payment_method", "source", "items", "notes"],
           },
         },
       },
@@ -88,11 +96,54 @@ const RESPONSE_SCHEMA = {
   },
 };
 
+type Item = { name: string; qty: number; price: number };
+type Tx = {
+  tx_date: string | null; merchant: string; total: number; subtotal: number | null;
+  currency: string; category: string; payment_method: string | null;
+  source: string; items: Item[]; notes: string | null; items_mismatch?: boolean;
+};
+
+const itemsSum = (t: Tx) => (t.items ?? []).reduce((s, i) => s + Number(i.price || 0), 0);
+// Only meaningful when the receipt printed a subtotal and items were read.
+const isOff = (t: Tx) =>
+  typeof t.subtotal === "number" && t.subtotal > 0 && (t.items?.length ?? 0) > 0 &&
+  Math.abs(itemsSum(t) - t.subtotal) > 0.05;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...CORS, "Content-Type": "application/json" },
   });
+}
+
+// Warm instances remember which model this account can actually use.
+let preferredModel = "gpt-4.1";
+
+async function askOpenAI(messages: unknown[], key: string) {
+  const candidates = preferredModel === "gpt-4.1" ? ["gpt-4.1", "gpt-4o"] : [preferredModel];
+  let lastError = "";
+  for (const model of candidates) {
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model,
+        messages,
+        response_format: RESPONSE_SCHEMA,
+        max_tokens: 8000,
+        temperature: 0,
+      }),
+    });
+    if (resp.ok) {
+      preferredModel = model;
+      const data = await resp.json();
+      return JSON.parse(data.choices[0].message.content) as { transactions: Tx[] };
+    }
+    lastError = await resp.text();
+    console.error(`model ${model} failed:`, lastError.slice(0, 400));
+    if (model === "gpt-4.1") preferredModel = "gpt-4o";
+  }
+  throw new Error(lastError);
 }
 
 Deno.serve(async (req) => {
@@ -145,39 +196,51 @@ Deno.serve(async (req) => {
     }
   } catch (_) { /* history is a bonus, never a blocker */ }
 
-  const content: unknown[] = [
+  const userContent: unknown[] = [
     { type: "text", text: `Extract all spending from these ${images.length} image(s). Today's date is ${new Date().toISOString().slice(0, 10)}.` },
     ...images.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
   ];
 
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT + (known ? `
+  const messages: unknown[] = [
+    { role: "system", content: SYSTEM_PROMPT + (known ? `\n\nThis user's known merchants and their chosen categories — reuse them (match loosely: ignore case, branch names, store numbers): ${known}` : "") },
+    { role: "user", content: userContent },
+  ];
 
-This user's known merchants and their chosen categories — reuse them (match loosely: ignore case, branch names, store numbers): ${known}` : "") },
-        { role: "user", content },
-      ],
-      response_format: RESPONSE_SCHEMA,
-      max_tokens: 8000,
-      temperature: 0,
-    }),
-  });
-
-  if (!resp.ok) {
-    const err = await resp.text();
+  let result: { transactions: Tx[] };
+  try {
+    result = await askOpenAI(messages, openaiKey);
+  } catch (err) {
     console.error("OpenAI error:", err);
     return json({ error: "AI extraction failed. Try again, or add the entry manually." }, 502);
   }
 
-  const data = await resp.json();
-  try {
-    const parsed = JSON.parse(data.choices[0].message.content);
-    return json({ transactions: parsed.transactions ?? [] });
-  } catch {
-    return json({ error: "AI returned an unreadable result. Try again." }, 502);
+  // ---- Mechanical verification: item amounts must reconstruct the subtotal ----
+  let txs = result.transactions ?? [];
+  const wrong = txs.filter(isOff);
+  if (wrong.length) {
+    const detail = wrong.map((t) =>
+      `"${t.merchant}": you listed ${t.items.length} items summing to ${itemsSum(t).toFixed(2)}, but the printed subtotal is ${Number(t.subtotal).toFixed(2)} (off by ${(itemsSum(t) - Number(t.subtotal)).toFixed(2)}).`
+    ).join(" ");
+    try {
+      const retry = await askOpenAI([
+        ...messages,
+        { role: "assistant", content: JSON.stringify(result) },
+        {
+          role: "user",
+          content: `The item amounts do not reconstruct the printed subtotal. ${detail}
+Look at the image again and re-read the item block line by line. For each line, identify which printed number is that line's amount before writing it down. Common causes: taking a neighbouring line's number, skipping a line, counting a line twice, or reading a unit price where an amount is printed. Keep merchant, date, total and subtotal exactly as before — only item names, quantities and amounts may change. Return corrected JSON for ALL transactions.`,
+        },
+      ], openaiKey);
+      const retryTxs = retry.transactions ?? [];
+      // Keep whichever pass reconstructs more subtotals correctly.
+      if (retryTxs.length === txs.length && retryTxs.filter(isOff).length < wrong.length) {
+        txs = retryTxs;
+      }
+    } catch (err) {
+      console.error("verification pass failed:", err);
+    }
   }
+
+  for (const t of txs) t.items_mismatch = isOff(t);
+  return json({ transactions: txs });
 });
