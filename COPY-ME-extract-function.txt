@@ -117,10 +117,19 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// Warm instances remember which model this account can actually use.
+// Provider is chosen by which secret exists: set GEMINI_API_KEY to use Gemini,
+// remove it to fall back to OpenAI. No code change needed to switch.
+const GEMINI_MODEL = "gemini-3.6-flash";
+const JSON_SHAPE_HINT = `Return JSON of this shape: {"transactions":[{"tx_date","merchant","total","subtotal","currency","category","payment_method","source","items":[{"name","qty","price"}],"notes"}]}`;
+
+// Warm instances remember which OpenAI model this account can actually use.
 let preferredModel = "gpt-4.1";
 
-async function askOpenAI(messages: unknown[], key: string) {
+// The conversation is held in OpenAI's message shape and translated for Gemini,
+// so the verification retry below works identically on both providers.
+type Msg = { role: string; content: unknown };
+
+async function askOpenAI(messages: Msg[], key: string) {
   const candidates = preferredModel === "gpt-4.1" ? ["gpt-4.1", "gpt-4o"] : [preferredModel];
   let lastError = "";
   for (const model of candidates) {
@@ -145,6 +154,53 @@ async function askOpenAI(messages: unknown[], key: string) {
     if (model === "gpt-4.1") preferredModel = "gpt-4o";
   }
   throw new Error(lastError);
+}
+
+async function askGemini(messages: Msg[], key: string) {
+  let system = "";
+  const contents: unknown[] = [];
+  for (const m of messages) {
+    if (m.role === "system") { system = String(m.content); continue; }
+    const parts: unknown[] = [];
+    if (typeof m.content === "string") {
+      parts.push({ text: m.content });
+    } else if (Array.isArray(m.content)) {
+      for (const block of m.content as { type: string; text?: string; image_url?: { url: string } }[]) {
+        if (block.type === "text") {
+          parts.push({ text: block.text });
+        } else if (block.type === "image_url" && block.image_url) {
+          const [head, data] = block.image_url.url.split(",", 2);
+          const mime = head.slice(head.indexOf(":") + 1, head.indexOf(";"));
+          parts.push({ inline_data: { mime_type: mime, data } });
+        }
+      }
+    }
+    // Gemini calls the assistant side "model".
+    contents.push({ role: m.role === "assistant" ? "model" : "user", parts });
+  }
+
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: `${system}
+
+${JSON_SHAPE_HINT}` }] },
+        contents,
+        generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 8000 },
+      }),
+    },
+  );
+  if (!resp.ok) {
+    const err = await resp.text();
+    console.error("gemini failed:", err.slice(0, 400));
+    throw new Error(err);
+  }
+  const data = await resp.json();
+  const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+  return JSON.parse(text) as { transactions: Tx[] };
 }
 
 Deno.serve(async (req) => {
@@ -175,8 +231,13 @@ Deno.serve(async (req) => {
     }
   }
 
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!openaiKey) return json({ error: "OPENAI_API_KEY secret not set on the server" }, 500);
+  if (!geminiKey && !openaiKey) {
+    return json({ error: "No AI key set on the server (GEMINI_API_KEY or OPENAI_API_KEY)" }, 500);
+  }
+  const askAI = (msgs: Msg[]) =>
+    geminiKey ? askGemini(msgs, geminiKey) : askOpenAI(msgs, openaiKey!);
 
   // Learn from this user's history: same merchant -> same category next time.
   let known = "";
@@ -202,14 +263,14 @@ Deno.serve(async (req) => {
     ...images.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } })),
   ];
 
-  const messages: unknown[] = [
+  const messages: Msg[] = [
     { role: "system", content: SYSTEM_PROMPT + (known ? `\n\nThis user's known merchants and their chosen categories — reuse them (match loosely: ignore case, branch names, store numbers): ${known}` : "") },
     { role: "user", content: userContent },
   ];
 
   let result: { transactions: Tx[] };
   try {
-    result = await askOpenAI(messages, openaiKey);
+    result = await askAI(messages);
   } catch (err) {
     console.error("OpenAI error:", err);
     return json({ error: "AI extraction failed. Try again, or add the entry manually." }, 502);
@@ -223,7 +284,7 @@ Deno.serve(async (req) => {
       `"${t.merchant}": you listed ${t.items.length} items summing to ${itemsSum(t).toFixed(2)}, but the printed subtotal is ${Number(t.subtotal).toFixed(2)} (off by ${(itemsSum(t) - Number(t.subtotal)).toFixed(2)}).`
     ).join(" ");
     try {
-      const retry = await askOpenAI([
+      const retry = await askAI([
         ...messages,
         { role: "assistant", content: JSON.stringify(result) },
         {
@@ -231,7 +292,7 @@ Deno.serve(async (req) => {
           content: `The item amounts do not reconstruct the printed subtotal. ${detail}
 Look at the image again and re-read the item block line by line. For each line, identify which printed number is that line's amount before writing it down. Common causes: taking a neighbouring line's number, skipping a line, counting a line twice, or reading a unit price where an amount is printed. Keep merchant, date, total and subtotal exactly as before — only item names, quantities and amounts may change. Return corrected JSON for ALL transactions.`,
         },
-      ], openaiKey);
+      ]);
       const retryTxs = retry.transactions ?? [];
       // Keep whichever pass reconstructs more subtotals correctly.
       if (retryTxs.length === txs.length && retryTxs.filter(isOff).length < wrong.length) {

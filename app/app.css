@@ -288,9 +288,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .merchant-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px dashed var(--hairline); font-size: 0.95rem; }
 .merchant-row:last-child { border-bottom: none; }
 .merchant-row .m-rank { font-size: 1.25rem; flex: 0 0 auto; }
-.merchant-row .m-mid { flex: 1; min-width: 0; }
-.merchant-row .m-name { font-weight: 700; }
-.merchant-row .m-sub { color: var(--muted); font-size: 0.78rem; }
+.merchant-row .m-mid { flex: 1; min-width: 0; overflow: hidden; }
+.merchant-row .m-name { display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.merchant-row .m-sub { display: block; color: var(--muted); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .merchant-row .m-amt { font-weight: 600; }
 
 /* ---------- category emoji badge ---------- */
@@ -355,9 +355,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 }
 .tx-row:active { transform: scale(0.985); }
 @media (hover: hover) { .tx-row:hover { box-shadow: var(--shadow-pop); transform: translateY(-1px); } }
-.tx-mid { flex: 1; min-width: 0; }
-.tx-merchant { font-weight: 700; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tx-sub { font-size: 0.78rem; color: var(--muted); }
+.tx-mid { flex: 1; min-width: 0; overflow: hidden; }
+/* display:block matters — ellipsis is ignored on inline elements */
+.tx-merchant { display: block; font-weight: 700; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-sub { display: block; font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tx-amt { font-weight: 600; font-size: 0.95rem; flex: 0 0 auto; }
 .empty-note { text-align: center; color: var(--muted); padding: 30px 20px 36px; font-size: 0.9rem; }
 .empty-note .big { font-size: 2.6rem; display: block; margin-bottom: 8px; }
@@ -552,8 +553,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 .rec-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--hairline); }
 .rec-row:last-child { border-bottom: none; }
 .rec-mid { flex: 1; min-width: 0; }
-.rec-name { font-weight: 700; font-size: 0.95rem; }
-.rec-sub { font-size: 0.78rem; color: var(--muted); }
+.rec-name { display: block; font-weight: 700; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-sub { display: block; font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-amt { font-weight: 600; flex: 0 0 auto; text-align: right; }
 .rec-amt small { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 700; }
 
@@ -613,3 +614,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 /* item-sum verification */
 .items-sum.sum-bad { color: var(--status-crit); font-weight: 700; }
 .dupe-flag.sum-flag { background: color-mix(in srgb, var(--status-crit) 16%, var(--card)); }
+
+/* long merchant names must never run under the amount */
+.tx-amt, .merchant-row .m-amt, .rec-amt { flex: 0 0 auto; margin-left: auto; padding-left: 8px; }
+.modal-title { min-width: 0; overflow-wrap: anywhere; }
