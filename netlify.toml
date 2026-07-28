@@ -1,0 +1,11 @@
+# Static site — nothing to compile, the app/ folder ships as-is.
+#
+# `ignore` runs BEFORE a build and inverts the usual exit-code meaning:
+#   exit 0      -> nothing changed under app/, skip the build (saves build minutes)
+#   exit 1/other -> app/ changed (or git couldn't tell), build and deploy
+# This is why the same command fails when pasted into the Build command field:
+# there, a non-zero exit means "the build failed".
+[build]
+  publish = "app"
+  command = ""
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- app/"
