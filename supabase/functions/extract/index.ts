@@ -45,7 +45,8 @@ Rules:
   Read the item block ONE LINE AT A TIME. Most receipts print the name and its amount on the SAME line, name left, amount right. Some print the amount on the line BELOW the name; modifier lines (Iced, Medium Well, "NO ...", special requests) belong to the item above them and never carry a price of their own. Work out which of these two layouts the receipt uses before assigning any price.
   Photos are often tilted: in a skewed photo an amount can APPEAR to sit beside a neighbouring item's name. That apparent alignment is an artifact — follow the receipt's own structure, never the photo's visual rows.
   The item amounts MUST add up to the printed subtotal. This is verified mechanically after you answer, so a wrong pairing will be caught and sent back to you.
-- payment_method: how it was actually paid, read from the payment/tender line near the bottom (e.g. "Cash", "Credit card", "Visa •1234", "Touch 'n Go", "DuitNow QR") — never a cashier or staff name printed in the header. Null if not shown.
+- payment_method: how it was actually paid, read from the payment/tender line near the bottom (e.g. "Credit card", "Visa •1234", "Touch 'n Go", "DuitNow QR") — never a cashier or staff name printed in the header. Note that "Served by Cash", "Cashier: ...", or a similar header line names a person or till, NOT the payment method.
+  This household pays by card. Default to "Card" when the tender line is missing, unreadable or ambiguous. Only answer "Cash" when a cash tender is explicitly printed as the payment (e.g. a "CASH 200.00" line with change given).
 - notes: anything useful that doesn't fit elsewhere (e.g. "includes 10% service charge and 6% SST", "5 pax"), else null.
 - If an image is unreadable or contains no spending data, contribute no transactions from it.`;
 

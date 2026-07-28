@@ -697,7 +697,7 @@ $("add-manual").addEventListener("click", () => {
 
 const blankDraft = () => ({
   kind: "expense", tx_date: todayISO(), merchant: "", total: "", currency: "MYR", subtotal: null,
-  category: "Other", payment_method: "", source: "manual", items: [], notes: "",
+  category: "Other", payment_method: "Card", source: "manual", items: [], notes: "",
 });
 
 const PDFJS = "https://esm.sh/pdfjs-dist@4.10.38/build/pdf.min.mjs";
