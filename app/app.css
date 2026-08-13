@@ -618,3 +618,84 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 /* long merchant names must never run under the amount */
 .tx-amt, .merchant-row .m-amt, .rec-amt { flex: 0 0 auto; margin-left: auto; padding-left: 8px; }
 .modal-title { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------- documents ---------- */
+.doc-home-card {
+  display: flex; align-items: center; gap: 14px; width: 100%; text-align: left;
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+.doc-home-card:active { transform: scale(0.985); }
+.doc-home-icon { font-size: 1.9rem; flex: 0 0 auto; }
+.doc-home-mid { flex: 1; min-width: 0; }
+.doc-home-mid strong { font-size: 1rem; }
+.doc-home-mid small { color: var(--muted); font-size: 0.8rem; }
+
+#doc-processing { text-align: center; padding: 56px 0; color: var(--ink-2); }
+#doc-processing-sub { margin-top: 6px; }
+.doc-words { flex: 0 0 auto; margin-left: auto; padding-left: 8px; font-size: 0.75rem; color: var(--muted); }
+
+.doc-card { margin-bottom: 18px; }
+.doc-card .dupe-flag, .modal .dupe-flag {
+  background: color-mix(in srgb, var(--status-warn) 18%, var(--card));
+  border-radius: 8px; padding: 6px 10px; font-size: 0.78rem; font-weight: 700; margin-bottom: 10px;
+}
+
+/* label / value pairs read off the page */
+.doc-fields { margin: 12px 0 4px; }
+.doc-fields-head {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin-bottom: 6px;
+}
+.field-row {
+  display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) 26px;
+  gap: 6px; align-items: center; margin-bottom: 6px;
+}
+.field-row input { padding: 7px 9px; font-size: 0.88rem; min-width: 0; }
+.field-row .fr-label { font-weight: 700; color: var(--ink-2); }
+.field-row .ie-del { color: var(--muted); font-size: 1.2rem; line-height: 1; padding: 0; }
+
+/* the transcript */
+.doc-text { margin: 12px 0 4px; }
+.doc-text > summary {
+  cursor: pointer; font-size: 0.72rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted); padding: 4px 0;
+}
+.doc-text textarea {
+  margin-top: 8px; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5;
+  resize: vertical; white-space: pre-wrap;
+}
+.doc-ro-text {
+  margin-top: 8px; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2);
+  background: var(--card); border: 1px solid var(--hairline); border-radius: 12px; padding: 12px;
+  max-height: 50dvh; overflow-y: auto;
+}
+.doc-ro-fields td:first-child { width: 40%; font-weight: 700; color: var(--ink-2); }
+.doc-ro-fields td:last-child { text-align: left; font-family: var(--font-body); }
+
+.doc-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 2px; }
+.doc-tag {
+  font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+}
+
+/* the kept scan */
+.doc-pages { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 12px; }
+.doc-page { min-width: 0; }
+.doc-page img {
+  display: block; width: 100%; max-width: 100%; height: auto; cursor: zoom-in;
+  border-radius: 12px; border: 1px solid var(--hairline); background: #fff;
+}
+.doc-page figcaption { font-size: 0.7rem; color: var(--muted); text-align: center; margin-top: 4px; }
+
+.img-zoom {
+  position: fixed; inset: 0; z-index: 70; background: rgba(10, 9, 7, 0.92);
+  display: flex; align-items: center; justify-content: center; padding: 8px;
+  overflow: auto; cursor: zoom-out;
+}
+.img-zoom img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+/* four actions (save / delete / copy / close) must wrap on a phone, not overflow */
+.doc-modal-actions { flex-wrap: wrap; }
+.doc-modal-actions .btn { flex: 1 1 40%; min-width: 0; }

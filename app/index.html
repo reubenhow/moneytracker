@@ -88,6 +88,15 @@
         <span class="hero-pace" id="hero-pace"></span>
       </div>
 
+      <button class="card tappable doc-home-card" id="card-documents">
+        <span class="doc-home-icon">📄</span>
+        <span class="doc-home-mid">
+          <strong>Documents</strong><br>
+          <small id="doc-home-sub">Snap any paper — I'll write down everything on it</small>
+        </span>
+        <span class="card-more">Open ›</span>
+      </button>
+
       <div class="card" id="card-donut">
         <div class="card-title-row">
           <h2 class="card-title"><span class="t-emoji">🍩</span>Where it went</h2>
@@ -221,6 +230,46 @@
       <div id="stats-list"></div>
     </section>
 
+    <!-- Documents -->
+    <section class="view hidden" id="view-documents">
+      <div id="doc-choices">
+        <button class="add-option" id="doc-camera" style="--cc:var(--cat-1)">
+          <span class="add-option-icon">📸</span>
+          <span><strong>Snap a document</strong><br><small>Any paper — notes, forms, letters, cards</small></span>
+        </button>
+        <button class="add-option" id="doc-gallery" style="--cc:var(--cat-7)">
+          <span class="add-option-icon">🗂️</span>
+          <span><strong>From gallery</strong><br><small>Photos or PDFs — each file becomes one document</small></span>
+        </button>
+        <input type="file" id="doc-file-camera" accept="image/*" capture="environment" class="hidden">
+        <input type="file" id="doc-file-gallery" accept="image/*,application/pdf,.pdf" multiple class="hidden">
+      </div>
+
+      <div id="doc-processing" class="hidden">
+        <span class="scan-emoji">📄</span>
+        <div class="spinner"></div>
+        <p id="doc-processing-text">Reading the page…</p>
+        <p class="muted" id="doc-processing-sub">Messy handwriting takes a little longer.</p>
+      </div>
+
+      <div id="doc-review" class="hidden">
+        <h2 class="add-heading" id="doc-review-heading">Check &amp; save</h2>
+        <div id="doc-review-cards"></div>
+        <div class="review-actions">
+          <button class="btn btn-primary btn-wide" id="doc-save-all">Save</button>
+          <button class="btn btn-ghost btn-wide" id="doc-discard">Discard</button>
+        </div>
+      </div>
+
+      <div id="doc-browse">
+        <div class="list-controls">
+          <input type="search" id="doc-search" placeholder="Search titles, text, tags…" aria-label="Search documents">
+        </div>
+        <p class="bd-summary" id="doc-summary-line"></p>
+        <div id="doc-list"></div>
+      </div>
+    </section>
+
     <!-- Chat -->
     <section class="view hidden" id="view-chat">
       <div id="chat-messages"></div>
@@ -258,7 +307,7 @@
       </div>
 
       <button class="btn btn-ghost btn-wide" id="sign-out">Sign out</button>
-      <p class="about-line">Money Tracker v1.9 · your photos are read once, never stored.</p>
+      <p class="about-line">Money Tracker v1.10 · your photos are read once, never stored.</p>
     </section>
 
   </main>
@@ -297,6 +346,9 @@
 <div class="modal-overlay hidden" id="modal-overlay">
   <div class="modal" id="modal-tx" role="dialog" aria-modal="true"></div>
 </div>
+
+<!-- Full-screen page zoom (document scans) -->
+<div class="img-zoom hidden" id="img-zoom"><img id="img-zoom-img" alt="Scanned page"></div>
 
 <div class="toast hidden" id="toast"></div>
 <div class="viz-tooltip hidden" id="viz-tooltip"></div>

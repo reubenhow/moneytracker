@@ -123,14 +123,14 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 const JSON_SHAPE_HINT = `Return JSON of this shape: {"transactions":[{"tx_date","merchant","total","subtotal","currency","category","payment_method","source","items":[{"name","qty","price"}],"notes"}]}`;
 
 // Warm instances remember which OpenAI model this account can actually use.
-let preferredModel = "gpt-4.1";
+let preferredModel = "gpt-5.6-luna";
 
 // The conversation is held in OpenAI's message shape and translated for Gemini,
 // so the verification retry below works identically on both providers.
 type Msg = { role: string; content: unknown };
 
 async function askOpenAI(messages: Msg[], key: string) {
-  const candidates = preferredModel === "gpt-4.1" ? ["gpt-4.1", "gpt-4o"] : [preferredModel];
+  const candidates = preferredModel === "gpt-5.6-luna" ? ["gpt-5.6-luna", "gpt-5.6-luna"] : [preferredModel];
   let lastError = "";
   for (const model of candidates) {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -151,7 +151,7 @@ async function askOpenAI(messages: Msg[], key: string) {
     }
     lastError = await resp.text();
     console.error(`model ${model} failed:`, lastError.slice(0, 400));
-    if (model === "gpt-4.1") preferredModel = "gpt-4o";
+    if (model === "gpt-5.6-luna") preferredModel = "gpt-5.6-luna";
   }
   throw new Error(lastError);
 }

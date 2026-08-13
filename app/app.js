@@ -83,6 +83,8 @@ let bdCat = "All", bdSort = "recent", bdSearch = "";
 let homeOffset = 0; // donut card month offset (0 = current)
 let statsGran = "month", statsAnchor = new Date();
 let reviewDrafts = [];
+let docs = [], docsLoaded = false, docsError = null;
+let docSearch = "", docDrafts = [], docBusy = false;
 let chatMsgs = []; // {role, content}
 let signupMode = false;
 
@@ -270,6 +272,9 @@ async function enterApp() {
   $("app").classList.remove("hidden");
   await loadAll();
   switchView("home");
+  // Documents live in their own table and their own request: if that table
+  // isn't set up yet, the money side of the app must not notice.
+  loadDocuments().then(updateDocHomeCard);
 }
 
 /* ---------- scope + nav ---------- */
@@ -283,7 +288,7 @@ document.querySelectorAll(".scope-btn").forEach((b) =>
   })
 );
 
-const VIEW_TITLES = { home: "Home", breakdown: "Breakdown", add: "Add", stats: "Stats", chat: "Chat", settings: "Settings" };
+const VIEW_TITLES = { home: "Home", breakdown: "Breakdown", add: "Add", stats: "Stats", documents: "Documents", chat: "Chat", settings: "Settings" };
 function switchView(v) {
   view = v;
   document.querySelectorAll(".view").forEach((s) => s.classList.add("hidden"));
@@ -304,6 +309,7 @@ function renderCurrent() {
   if (view === "breakdown") renderBreakdown();
   if (view === "stats") renderStats();
   if (view === "add") renderAddIdle();
+  if (view === "documents") renderDocuments();
   if (view === "chat") renderChat();
   if (view === "settings") renderSettings();
 }
@@ -336,6 +342,7 @@ function renderHome() {
   const paceEl = $("hero-pace");
   paceEl.textContent = total > 0 ? `${fmtRM(total / new Date().getDate())}/day average` : "";
 
+  updateDocHomeCard();
   renderDonutCard();
   renderTrend(list);
   renderBudgets();
@@ -1143,9 +1150,11 @@ function renderSettings() {
   $("rates-line").textContent = ratesInfo.live
     ? `Exchange rates: live \u00B7 updated ${ratesInfo.date}`
     : "Exchange rates: built-in estimates (couldn't reach the rate service)";
-  $("data-count").textContent = mine.length
+  const myDocs = docs.filter((d) => d.user_id === session.user.id).length;
+  const docLine = myDocs ? ` ${myDocs} document${myDocs === 1 ? "" : "s"} filed.` : "";
+  $("data-count").textContent = (mine.length
     ? `${mine.length} entries of yours, since ${fmtDate(first)}.`
-    : "Nothing saved yet.";
+    : "Nothing saved yet.") + docLine;
 }
 
 $("set-name-save").addEventListener("click", async () => {
@@ -1455,6 +1464,445 @@ function renderStatsList(cur) {
     r.addEventListener("click", () => openTxModal(txs.find((t) => t.id === r.dataset.id)))
   );
 }
+
+/* ================= DOCUMENTS =================
+   A filing cabinet for paper. Snap anything, the AI writes down everything on
+   it, and the page image is kept with the text so you can always check it. */
+
+const DOC_TYPES = [
+  { name: "Note", e: "📝" }, { name: "Form", e: "🗂️" }, { name: "Letter", e: "✉️" },
+  { name: "Contract", e: "📜" }, { name: "ID", e: "🪪" }, { name: "Medical", e: "🩺" },
+  { name: "Bill", e: "💡" }, { name: "Receipt", e: "🧾" }, { name: "Menu", e: "🍽️" },
+  { name: "Recipe", e: "🍳" }, { name: "List", e: "✅" }, { name: "Schedule", e: "🗓️" },
+  { name: "Card", e: "💳" }, { name: "Certificate", e: "🎖️" }, { name: "Other", e: "📄" },
+];
+const docTypeOf = (n) => DOC_TYPES.find((t) => t.name === n) || DOC_TYPES[DOC_TYPES.length - 1];
+// Photos are read once and never stored — only the extracted text is saved.
+// The scan is shown during review, from memory, then dropped.
+const DOC_LIST_COLS = "id,user_id,title,doc_type,doc_date,summary,fields,tags,transcript,source,created_at";
+const DOC_MAX_PAGES = 12;
+
+const wordCount = (s) => (String(s || "").trim().match(/\S+/g) || []).length;
+const visibleDocs = () => (scope === "mine" ? docs.filter((d) => d.user_id === session.user.id) : docs);
+
+function docTableHint(error) {
+  const msg = String(error?.message || error || "");
+  return /does not exist|schema cache|relation/i.test(msg)
+    ? "Documents aren't set up on the database yet — run COPY-ME-documents-schema.txt in Supabase."
+    : "Couldn't save — check your connection and try again";
+}
+
+async function loadDocuments() {
+  try {
+    const { data, error } = await supa.from("documents").select(DOC_LIST_COLS)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    docs = data || [];
+    docsError = null;
+  } catch (err) {
+    docs = [];
+    docsError = docTableHint(err);
+    console.warn("documents unavailable:", err);
+  }
+  docsLoaded = true;
+}
+
+function updateDocHomeCard() {
+  const sub = $("doc-home-sub");
+  if (!sub) return;
+  const n = docsLoaded ? visibleDocs().length : 0;
+  sub.textContent = n
+    ? `${n} saved · snap another and I'll write it down`
+    : "Snap any paper — I'll write down everything on it";
+}
+
+$("card-documents").addEventListener("click", () => switchView("documents"));
+
+function docShow(pane) {
+  $("doc-choices").classList.toggle("hidden", pane !== "browse");
+  $("doc-browse").classList.toggle("hidden", pane !== "browse");
+  $("doc-processing").classList.toggle("hidden", pane !== "processing");
+  $("doc-review").classList.toggle("hidden", pane !== "review");
+}
+
+async function renderDocuments() {
+  if (docBusy) { docShow("processing"); return; }
+  if (docDrafts.length) { renderDocReview(); return; }
+  docShow("browse");
+  if (!docsLoaded) {
+    $("doc-list").innerHTML = `<p class="empty-note">Opening the drawer…</p>`;
+    await loadDocuments();
+    updateDocHomeCard();
+  }
+  renderDocList();
+}
+
+/* ---------- browse ---------- */
+$("doc-search").addEventListener("input", (e) => { docSearch = e.target.value.toLowerCase(); renderDocList(); });
+
+function docHaystack(d) {
+  return [
+    d.title, d.summary, d.doc_type, d.transcript,
+    (d.tags || []).join(" "),
+    (d.fields || []).map((f) => `${f.label} ${f.value}`).join(" "),
+  ].join(" ").toLowerCase();
+}
+
+function renderDocList() {
+  const holder = $("doc-list");
+  let list = visibleDocs();
+  if (docSearch) list = list.filter((d) => docHaystack(d).includes(docSearch));
+
+  $("doc-summary-line").textContent = docsError
+    ? ""
+    : list.length
+      ? `${list.length} document${list.length === 1 ? "" : "s"}${docSearch ? " match" + (list.length === 1 ? "es" : "") : ""}`
+      : "";
+
+  if (docsError) {
+    holder.innerHTML = `<p class="empty-note"><span class="big">🔌</span>${esc(docsError)}</p>`;
+    return;
+  }
+  if (!list.length) {
+    holder.innerHTML = `<p class="empty-note"><span class="big">${docSearch ? "🔍" : "🗄️"}</span>${
+      docSearch
+        ? "Nothing matches that."
+        : "Nothing filed yet. Snap a page above — handwriting is fine, the AI will do its best."
+    }</p>`;
+    return;
+  }
+  holder.innerHTML = list.map((d) => {
+    const t = docTypeOf(d.doc_type);
+    const bits = [d.doc_date ? fmtDate(d.doc_date) : fmtDate(String(d.created_at).slice(0, 10)), d.doc_type];
+    if ((d.fields || []).length) bits.push(`${d.fields.length} field${d.fields.length === 1 ? "" : "s"}`);
+    if (scope === "ours" && members.length > 1) bits.push(memberName(d.user_id));
+    return `<button class="tx-row" data-id="${esc(d.id)}">
+      <span class="cat-badge" style="--cc:var(--cat-7)">${t.e}</span>
+      <span class="tx-mid">
+        <span class="tx-merchant">${esc(d.title)}</span><br>
+        <span class="tx-sub">${esc(bits.join(" · "))}</span>
+      </span>
+      <span class="doc-words mono">${wordCount(d.transcript)}w</span>
+    </button>`;
+  }).join("");
+  holder.querySelectorAll(".tx-row").forEach((r) =>
+    r.addEventListener("click", () => openDocModal(docs.find((d) => d.id === r.dataset.id)))
+  );
+}
+
+/* ---------- capture ---------- */
+$("doc-camera").addEventListener("click", () => $("doc-file-camera").click());
+$("doc-gallery").addEventListener("click", () => $("doc-file-gallery").click());
+$("doc-file-camera").addEventListener("change", (e) => handleDocFiles([...e.target.files]));
+$("doc-file-gallery").addEventListener("change", (e) => handleDocFiles([...e.target.files]));
+
+async function fnErrorMessage(error, fallback) {
+  try { return (await error.context.json()).error || fallback; } catch { return fallback; }
+}
+
+async function handleDocFiles(files) {
+  if (!files.length) return;
+  $("doc-file-camera").value = ""; $("doc-file-gallery").value = "";
+  docBusy = true;
+  docShow("processing");
+  const setText = (t) => { $("doc-processing-text").textContent = t; };
+
+  const drafts = [];
+  let failed = 0, lastError = "";
+  try {
+    for (let f = 0; f < files.length; f++) {
+      const file = files[f];
+      const of = files.length > 1 ? ` (${f + 1} of ${files.length})` : "";
+      setText(`Opening ${file.name}…${of}`);
+      let pages = [], source = "photo";
+      try {
+        if (isPdf(file)) {
+          source = "pdf";
+          pages = await pdfToImages(file, (p, n) => setText(`Rendering page ${p} of ${n} of ${file.name}…`));
+        } else {
+          pages = [await downscale(file)];
+        }
+      } catch (err) {
+        console.error(err);
+        toast(`Couldn't open ${file.name}`);
+        failed++;
+        continue;
+      }
+      if (!pages.length) continue;
+      if (pages.length > DOC_MAX_PAGES) {
+        toast(`${file.name}: reading the first ${DOC_MAX_PAGES} pages only`);
+        pages = pages.slice(0, DOC_MAX_PAGES);
+      }
+
+      setText(`Writing down everything on ${file.name}…${of}`);
+      try {
+        const { data, error } = await supa.functions.invoke("docscan", { body: { images: pages } });
+        if (error) throw new Error(await fnErrorMessage(error, "Couldn't read that page"));
+        const found = data.documents || [];
+        if (!found.length) { failed++; continue; }
+        for (const d of found) {
+          drafts.push({
+            title: d.title || "Untitled",
+            doc_type: d.doc_type || "Other",
+            doc_date: d.doc_date || "",
+            summary: d.summary || "",
+            fields: d.fields || [],
+            tags: d.tags || [],
+            transcript: d.transcript || "",
+            confidence: d.confidence || "medium",
+            pages, // shown while reviewing only, never saved
+            source,
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        lastError = err.message || "";
+        failed++;
+      }
+    }
+  } finally {
+    docBusy = false;
+  }
+
+  if (!drafts.length) {
+    toast(lastError || "Nothing readable on that page — try a brighter, straighter photo");
+    docShow("browse");
+    renderDocList();
+    return;
+  }
+  if (failed) toast(`${failed} file${failed > 1 ? "s" : ""} couldn't be read`);
+  docDrafts = drafts;
+  renderDocReview();
+}
+
+/* ---------- the shared document form (used by review + detail) ---------- */
+function docFormHTML(d, opts = {}) {
+  const openText = opts.openText !== false;
+  const fields = d.fields || [];
+  const conf = d.confidence && d.confidence !== "high"
+    ? `<div class="dupe-flag doc-conf">${d.confidence === "low"
+        ? "Much of this page was hard to read — check it against the scan below."
+        : "Parts of this page were guessed — anything marked [?] is worth a look."}</div>`
+    : "";
+  return `
+    ${conf}
+    <div class="review-grid">
+      <div class="span2"><label>Title</label><input type="text" data-df="title" value="${esc(d.title)}" placeholder="Whose or what is this?"></div>
+      <div><label>Kind</label><select data-df="doc_type">${DOC_TYPES.map((t) =>
+        `<option value="${t.name}" ${t.name === d.doc_type ? "selected" : ""}>${t.e} ${t.name}</option>`).join("")}</select></div>
+      <div><label>Date on it</label><input type="date" data-df="doc_date" value="${esc(d.doc_date || "")}"></div>
+      <div class="span2"><label>What it is</label><input type="text" data-df="summary" value="${esc(d.summary || "")}" placeholder="One line, for future you"></div>
+    </div>
+
+    <div class="doc-fields">
+      <div class="doc-fields-head"><span>Written on the page</span>
+        <span class="items-sum">${fields.length} field${fields.length === 1 ? "" : "s"}</span></div>
+      ${fields.map((f, j) => `
+      <div class="field-row" data-j="${j}">
+        <input type="text" class="fr-label" data-ff="label" value="${esc(f.label)}" placeholder="Label" aria-label="Label">
+        <input type="text" class="fr-value" data-ff="value" value="${esc(f.value)}" placeholder="—" aria-label="Value">
+        <button type="button" class="ie-del" aria-label="Remove this line">×</button>
+      </div>`).join("")}
+      <button type="button" class="btn-link small df-add">+ line</button>
+    </div>
+
+    <details class="doc-text" ${openText ? "open" : ""}>
+      <summary>Everything on the page · <span data-role="words">${wordCount(d.transcript)} words</span></summary>
+      <textarea data-df="transcript" rows="16" spellcheck="false">${esc(d.transcript)}</textarea>
+    </details>
+
+    ${(d.tags || []).length ? `<div class="doc-tags">${d.tags.map((t) => `<span class="doc-tag">${esc(t)}</span>`).join("")}</div>` : ""}
+
+    ${(d.pages || []).length ? `<div class="doc-pages">
+      ${d.pages.map((p, j) => `<figure class="doc-page">
+        <img class="doc-page-img" src="${esc(p)}" alt="Scanned page ${j + 1}" loading="lazy">
+        <figcaption>page ${j + 1} · tap to zoom · not saved</figcaption></figure>`).join("")}
+    </div>` : ""}`;
+}
+
+function bindDocForm(root, d, rerender) {
+  root.querySelectorAll("[data-df]").forEach((inp) =>
+    inp.addEventListener("input", () => {
+      d[inp.dataset.df] = inp.value;
+      if (inp.dataset.df === "transcript") {
+        const w = root.querySelector('[data-role="words"]');
+        if (w) w.textContent = `${wordCount(d.transcript)} words`;
+      }
+    })
+  );
+  root.querySelectorAll(".field-row [data-ff]").forEach((inp) =>
+    inp.addEventListener("input", () => {
+      d.fields[Number(inp.closest(".field-row").dataset.j)][inp.dataset.ff] = inp.value;
+    })
+  );
+  root.querySelectorAll(".field-row .ie-del").forEach((b) =>
+    b.addEventListener("click", () => {
+      d.fields.splice(Number(b.closest(".field-row").dataset.j), 1);
+      rerender();
+    })
+  );
+  root.querySelectorAll(".df-add").forEach((b) =>
+    b.addEventListener("click", () => {
+      d.fields.push({ label: "", value: "" });
+      d._focusLast = true;
+      rerender();
+    })
+  );
+  root.querySelectorAll(".doc-page-img").forEach((img) =>
+    img.addEventListener("click", () => zoomImage(img.src))
+  );
+  if (d._focusLast) {
+    delete d._focusLast;
+    const rows = root.querySelectorAll(".field-row .fr-label");
+    if (rows.length) rows[rows.length - 1].focus();
+  }
+}
+
+/* ---------- review before saving ---------- */
+function renderDocReview() {
+  docShow("review");
+  $("doc-review-heading").textContent = docDrafts.length > 1
+    ? `Found ${docDrafts.length} documents`
+    : "Check & save";
+  const holder = $("doc-review-cards");
+  holder.innerHTML = docDrafts.map((d, i) => `
+    <div class="card doc-card" data-i="${i}">
+      ${docFormHTML(d, { openText: docDrafts.length === 1 })}
+      ${docDrafts.length > 1 ? `<button class="btn-danger-link doc-remove" data-i="${i}">Don't save this one</button>` : ""}
+    </div>`).join("");
+  holder.querySelectorAll(".doc-card").forEach((card) =>
+    bindDocForm(card, docDrafts[Number(card.dataset.i)], renderDocReview)
+  );
+  holder.querySelectorAll(".doc-remove").forEach((b) =>
+    b.addEventListener("click", () => {
+      docDrafts.splice(Number(b.dataset.i), 1);
+      if (docDrafts.length) renderDocReview();
+      else { docShow("browse"); renderDocList(); }
+    })
+  );
+  $("doc-save-all").textContent = docDrafts.length > 1 ? `Save all ${docDrafts.length}` : "Save";
+  window.scrollTo(0, 0);
+}
+
+$("doc-discard").addEventListener("click", () => {
+  docDrafts = [];
+  docShow("browse");
+  renderDocList();
+});
+
+$("doc-save-all").addEventListener("click", async () => {
+  for (const d of docDrafts) {
+    if (!String(d.title).trim()) return toast("Every document needs a title");
+  }
+  const rows = docDrafts.map((d) => ({
+    user_id: session.user.id,
+    title: String(d.title).trim().slice(0, 120),
+    doc_type: d.doc_type || "Other",
+    doc_date: d.doc_date || null,
+    summary: String(d.summary || "").trim() || null,
+    fields: (d.fields || []).filter((f) => String(f.label).trim() || String(f.value).trim()),
+    tags: d.tags || [],
+    transcript: String(d.transcript || ""),
+    source: d.source || "photo",
+  }));
+  const btn = $("doc-save-all");
+  btn.disabled = true;
+  const { data, error } = await supa.from("documents").insert(rows).select(DOC_LIST_COLS);
+  btn.disabled = false;
+  if (error) { console.error(error); return toast(docTableHint(error)); }
+  docs = [...(data || []), ...docs];
+  docsLoaded = true; docsError = null;
+  docDrafts = [];
+  toast(`Filed ${data.length} document${data.length === 1 ? "" : "s"} ✓`);
+  confetti();
+  docShow("browse");
+  renderDocList();
+  updateDocHomeCard();
+});
+
+/* ---------- detail / edit ---------- */
+function openDocModal(doc) {
+  if (!doc) return;
+  const own = doc.user_id === session.user.id;
+  const modal = $("modal-tx");
+  $("modal-overlay").classList.remove("hidden");
+
+  // Edits go to a copy, so Close leaves the saved document untouched.
+  const d = {
+    ...doc,
+    doc_date: doc.doc_date || "",
+    fields: (doc.fields || []).map((f) => ({ ...f })),
+    tags: [...(doc.tags || [])],
+    pages: [], // the photo was never stored — only what was read off it
+    confidence: "high", // saved documents were already reviewed once
+  };
+
+  const draw = () => {
+    modal.innerHTML = `
+      <div class="modal-title">${docTypeOf(doc.doc_type).e}${esc(doc.title)}</div>
+      <div class="modal-sub">filed ${fmtDate(String(doc.created_at).slice(0, 10))} · read from a ${esc(doc.source === "pdf" ? "PDF" : "photo")} · added by ${esc(memberName(doc.user_id))}</div>
+      ${own ? docFormHTML(d) : docReadOnlyHTML(d)}
+      <div class="modal-actions doc-modal-actions">
+        ${own ? `<button class="btn btn-primary" id="d-save">Save changes</button>
+                 <button class="btn btn-ghost" id="d-delete">Delete</button>` : ""}
+        <button class="btn btn-ghost" id="d-copy">Copy text</button>
+        <button class="btn btn-ghost" id="d-close">Close</button>
+      </div>`;
+    if (own) bindDocForm(modal, d, draw);
+    else modal.querySelectorAll(".doc-page-img").forEach((img) =>
+      img.addEventListener("click", () => zoomImage(img.src)));
+
+    $("d-close").addEventListener("click", closeModal);
+    $("d-copy").addEventListener("click", async () => {
+      const text = `${d.title}\n\n${(d.fields || []).map((f) => `${f.label}: ${f.value}`).join("\n")}\n\n${d.transcript}`.trim();
+      try { await navigator.clipboard.writeText(text); toast("Copied"); }
+      catch { toast("Couldn't copy on this browser"); }
+    });
+    if (!own) return;
+    $("d-save").addEventListener("click", async () => {
+      if (!String(d.title).trim()) return toast("Give it a title");
+      const patch = {
+        title: String(d.title).trim().slice(0, 120),
+        doc_type: d.doc_type,
+        doc_date: d.doc_date || null,
+        summary: String(d.summary || "").trim() || null,
+        fields: (d.fields || []).filter((f) => String(f.label).trim() || String(f.value).trim()),
+        transcript: String(d.transcript || ""),
+      };
+      const { error } = await supa.from("documents").update(patch).eq("id", doc.id);
+      if (error) { console.error(error); return toast("Couldn't save — try again"); }
+      Object.assign(doc, patch);
+      closeModal(); renderDocList(); toast("Updated");
+    });
+    $("d-delete").addEventListener("click", async () => {
+      if (!confirm(`Delete "${doc.title}"? The scan and the text both go. This can't be undone.`)) return;
+      const { error } = await supa.from("documents").delete().eq("id", doc.id);
+      if (error) return toast("Couldn't delete — try again");
+      docs = docs.filter((x) => x.id !== doc.id);
+      closeModal(); renderDocList(); updateDocHomeCard(); toast("Deleted");
+    });
+  };
+  draw();
+}
+
+function docReadOnlyHTML(d) {
+  return `
+    ${d.summary ? `<p>${esc(d.summary)}</p>` : ""}
+    ${(d.fields || []).length ? `<table class="items-table doc-ro-fields">${d.fields.map((f) =>
+      `<tr><td class="qty">${esc(f.label)}</td><td>${esc(f.value) || "—"}</td></tr>`).join("")}</table>` : ""}
+    ${d.transcript ? `<details class="doc-text" open><summary>Everything on the page · ${wordCount(d.transcript)} words</summary>
+      <pre class="doc-ro-text">${esc(d.transcript)}</pre></details>` : ""}`;
+}
+
+/* ---------- page zoom ---------- */
+function zoomImage(src) {
+  $("img-zoom-img").src = src;
+  $("img-zoom").classList.remove("hidden");
+}
+$("img-zoom").addEventListener("click", () => {
+  $("img-zoom").classList.add("hidden");
+  $("img-zoom-img").removeAttribute("src");
+});
 
 /* ---------- CSV export ---------- */
 $("export-csv").addEventListener("click", () => {

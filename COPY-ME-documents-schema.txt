@@ -1,0 +1,43 @@
+-- Money Tracker — Documents feature (v1.10)
+-- Run this whole file ONCE in: Supabase Dashboard > SQL Editor > New query > Run
+-- Safe to re-run: every statement is guarded.
+
+create table if not exists public.documents (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null default 'Untitled',
+  doc_type text not null default 'Other',
+  doc_date date,                            -- date written on the paper, if any
+  summary text,
+  fields jsonb not null default '[]',       -- [{label, value}] read off the page
+  tags text[] not null default '{}',
+  transcript text not null default '',      -- everything on the page, written out
+  source text not null default 'photo',     -- photo | pdf
+  created_at timestamptz not null default now()
+);
+
+create index if not exists documents_user_created
+  on public.documents (user_id, created_at desc);
+
+alter table public.documents enable row level security;
+
+-- Same visibility rules as transactions: mine always, my household read-only.
+drop policy if exists "documents: mine + household" on public.documents;
+create policy "documents: mine + household" on public.documents
+  for select using (
+    user_id = auth.uid()
+    or (public.my_household() is not null
+        and public.user_household(user_id) = public.my_household())
+  );
+
+drop policy if exists "documents: insert own" on public.documents;
+create policy "documents: insert own" on public.documents
+  for insert with check (user_id = auth.uid());
+
+drop policy if exists "documents: update own" on public.documents;
+create policy "documents: update own" on public.documents
+  for update using (user_id = auth.uid());
+
+drop policy if exists "documents: delete own" on public.documents;
+create policy "documents: delete own" on public.documents
+  for delete using (user_id = auth.uid());

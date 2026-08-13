@@ -1,5 +1,5 @@
 // Money Tracker — service worker: offline shell + cached assets
-const CACHE = "mt-v12";
+const CACHE = "mt-v13";
 const SHELL = ["./", "./index.html", "./app.css", "./app.js", "./config.js", "./manifest.json",
   "./icons/icon-192.png", "./icons/icon-512.png"];
 

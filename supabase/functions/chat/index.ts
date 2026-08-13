@@ -109,7 +109,7 @@ If the data can't answer, say so plainly. Point out useful patterns (recurring c
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiKey}` },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-5.6-luna",
       messages: [
         { role: "system", content: system },
         ...history.filter((m) => m.role === "user" || m.role === "assistant")
