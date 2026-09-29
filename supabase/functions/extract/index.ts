@@ -272,8 +272,10 @@ Deno.serve(async (req) => {
   try {
     result = await askAI(messages);
   } catch (err) {
-    console.error("OpenAI error:", err);
-    return json({ error: "AI extraction failed. Try again, or add the entry manually." }, 502);
+    console.error("AI error:", err);
+    // Pass the provider's reason through so the app can show it (key, quota, model...).
+    const why = String((err as Error)?.message ?? err).replace(/\s+/g, " ").slice(0, 300);
+    return json({ error: `AI extraction failed: ${why}` }, 502);
   }
 
   // ---- Mechanical verification: item amounts must reconstruct the subtotal ----
