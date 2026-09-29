@@ -119,7 +119,10 @@ function json(body: unknown, status = 200) {
 
 // Provider is chosen by which secret exists: set GEMINI_API_KEY to use Gemini,
 // remove it to fall back to OpenAI. No code change needed to switch.
-const GEMINI_MODEL = "gemini-3.6-flash";
+// First model is the one picked for quality; the rest are fallbacks for when
+// Google answers 503 "high demand" (or 429/500) on it.
+const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
+const GEMINI_RETRYABLE = new Set([429, 500, 503]);
 const JSON_SHAPE_HINT = `Return JSON of this shape: {"transactions":[{"tx_date","merchant","total","subtotal","currency","category","payment_method","source","items":[{"name","qty","price"}],"notes"}]}`;
 
 // Warm instances remember which OpenAI model this account can actually use.
@@ -179,25 +182,32 @@ async function askGemini(messages: Msg[], key: string) {
     contents.push({ role: m.role === "assistant" ? "model" : "user", parts });
   }
 
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: `${system}
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: `${system}
 
 ${JSON_SHAPE_HINT}` }] },
-        contents,
-        generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 8000 },
-      }),
-    },
-  );
-  if (!resp.ok) {
-    const err = await resp.text();
-    console.error("gemini failed:", err.slice(0, 400));
-    throw new Error(err);
+    contents,
+    generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 8000 },
+  });
+
+  // Each model gets two tries (1s apart) on a busy/overloaded reply, then the
+  // next model. Any other error (bad key, bad request) stops straight away.
+  let resp: Response | null = null;
+  let lastErr = "";
+  outer: for (const model of GEMINI_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      resp = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body },
+      );
+      if (resp.ok) break outer;
+      lastErr = await resp.text();
+      console.error(`gemini ${model} failed (${resp.status}):`, lastErr.slice(0, 400));
+      if (!GEMINI_RETRYABLE.has(resp.status)) throw new Error(lastErr);
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1000));
+    }
   }
+  if (!resp?.ok) throw new Error(lastErr);
   const data = await resp.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
   return JSON.parse(text) as { transactions: Tx[] };
