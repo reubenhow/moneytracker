@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
 
   let q = supa
     .from("transactions")
-    .select("user_id, tx_date, merchant, total, kind, category, payment_method, notes, items")
+    .select("user_id, tx_date, merchant, total, kind, category, payment_method, notes, items, rating")
     .order("tx_date", { ascending: false })
     .limit(4000);
   if (scope === "mine") q = q.eq("user_id", user.id);
@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       ? "|bought: " + t.items.map((i: { qty?: number; name?: string; price?: number }) =>
           `${Number(i.qty) || 1}x ${i.name} (${Number(i.price || 0).toFixed(2)})`).join(", ").slice(0, 220)
       : "";
-    return `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.kind === "income" ? "|INCOME" : ""}${t.notes ? "|" + t.notes : ""}${items}`;
+    return `${t.tx_date}|${t.merchant}|RM ${Number(t.total).toFixed(2)}|${t.category}|${names.get(t.user_id) ?? "?"}${t.kind === "income" ? "|INCOME" : ""}${t.rating != null ? `|rated ${Number(t.rating).toFixed(1)}/10` : ""}${t.notes ? "|" + t.notes : ""}${items}`;
   });
 
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
@@ -83,13 +83,27 @@ Deno.serve(async (req) => {
     .map(([m, v]) => `${m}: RM ${v.toFixed(2)}`).join("; ");
   const aggCats = [...catTot.entries()].sort((a, b) => b[1] - a[1])
     .map(([c, v]) => `${c}: RM ${v.toFixed(2)}`).join("; ");
+  // Food ratings: average score per place, so "our favourite food" is a lookup, not maths.
+  const rated = new Map<string, { sum: number; n: number; best: number; who: Set<string> }>();
+  for (const t of exp) {
+    if (t.rating == null) continue;
+    const r = Number(t.rating);
+    const e = rated.get(t.merchant) || { sum: 0, n: 0, best: 0, who: new Set<string>() };
+    e.sum += r; e.n++; e.best = Math.max(e.best, r);
+    e.who.add(names.get(t.user_id) ?? "?");
+    rated.set(t.merchant, e);
+  }
+  const aggRated = [...rated.entries()]
+    .sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n || b[1].n - a[1].n).slice(0, 25)
+    .map(([k, e]) => `${k}: avg ${(e.sum / e.n).toFixed(1)}/10 over ${e.n} rated visit(s), best ${e.best.toFixed(1)}, rated by ${[...e.who].join(" & ")}`)
+    .join("; ");
   const aggTops = [...merch.entries()].sort((a, b) => b[1].sum - a[1].sum).slice(0, 15)
     .map(([k, e]) => `${k}: RM ${e.sum.toFixed(2)}, ${e.n} visit(s), last ${e.last}`).join("; ");
 
   const system = `You are the assistant inside "Money Tracker", a personal spending app. Currency is RM (Malaysian Ringgit).
 Today's date: ${new Date().toISOString().slice(0, 10)}.
 The user's ${scope === "ours" ? "household's" : "own"} transactions are below, newest first, one per line:
-date|merchant|amount|category|person(|INCOME)(|notes)(|bought: line items with prices)
+date|merchant|amount|category|person(|INCOME)(|rated X/10)(|notes)(|bought: line items with prices)
 
 <transactions>
 ${lines.join("\n") || "(no transactions yet)"}
@@ -101,6 +115,8 @@ PRECOMPUTED EXACT TOTALS (spending only — trust these over your own arithmetic
 Monthly totals: ${aggMonths || "none"}
 Category totals (all time): ${aggCats || "none"}
 Top merchants: ${aggTops || "none"}
+Top-rated food & drink places (the user's own scores out of 10, highest average first): ${aggRated || "none rated yet"}
+"Favourite" food or places means the highest rated ones above; use visit count only to break ties or when asked how often. If nothing is rated yet, say so and suggest rating Food & Drinks entries (tap one in Breakdown).
 Answer questions using ONLY this data. Do arithmetic carefully. Format money as RM 1,234.56.
 Be warm and brief — a couple of sentences, or a short list when comparing things.
 If the data can't answer, say so plainly. Point out useful patterns (recurring charges, unusual spikes) when they're relevant to the question.`;

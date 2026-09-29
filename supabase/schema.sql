@@ -130,3 +130,15 @@ end $$;
 create or replace function public.leave_household()
 returns void language sql security definer set search_path = public as
 $$ update profiles set household_id = null where id = auth.uid() $$;
+
+-- A score out of 10 with one decimal (e.g. 9.7), set on Food & Drinks entries.
+alter table public.transactions
+  add column if not exists rating numeric(3,1);
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'transactions_rating_range') then
+    alter table public.transactions
+      add constraint transactions_rating_range check (rating is null or (rating >= 0 and rating <= 10));
+  end if;
+end $$;

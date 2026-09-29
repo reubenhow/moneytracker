@@ -622,7 +622,7 @@ function renderBdList() {
       <span class="cat-badge" style="--cc:var(${dispCat(t).v})">${dispCat(t).e}</span>
       <span class="tx-mid">
         <span class="tx-merchant">${esc(t.merchant)}</span><br>
-        <span class="tx-sub">${fmtDate(t.tx_date)} · ${esc(t.category)}${origNote(t)}${scope === "ours" && members.length > 1 ? " · " + esc(memberName(t.user_id)) : ""}</span>
+        <span class="tx-sub">${fmtDate(t.tx_date)} · ${esc(t.category)}${t.rating != null ? ` · ★ ${fmtRating(t.rating)}` : ""}${origNote(t)}${scope === "ours" && members.length > 1 ? " · " + esc(memberName(t.user_id)) : ""}</span>
       </span>
       <span class="tx-amt mono${isExpense(t) ? "" : " inc"}">${isExpense(t) ? "" : "+"}${fmtRM(t.total)}</span>
     </button>`).join("");
@@ -632,6 +632,16 @@ function renderBdList() {
 }
 
 /* ---------- transaction modal ---------- */
+// Food & Drinks entries can carry a score out of 10, one decimal (9.7).
+const RATED_CAT = "Food & Drinks";
+function parseRating(v) {
+  if (String(v).trim() === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(Math.min(10, Math.max(0, n)) * 10) / 10;
+}
+function fmtRating(r) { return Number(r).toFixed(1); }
+
 function openTxModal(tx) {
   if (!tx) return;
   const own = tx.user_id === session.user.id;
@@ -647,9 +657,10 @@ function openTxModal(tx) {
       <div class="duo-total"><label>Total (RM)</label><input type="number" step="0.01" min="0" id="m-total" value="${Number(tx.total)}"></div></div>
       <div><label>Category</label><select id="m-cat">${(isExpense(tx) ? CATEGORIES : INCOME_CATS).map((c) => `<option value="${c.name}" ${c.name === tx.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
       <div><label>Paid with</label><input type="text" id="m-pay" value="${esc(tx.payment_method || "")}" placeholder="Cash, card…"></div>
+      <div class="span2" id="m-rating-wrap"><label>Rating (out of 10)</label><input type="number" step="0.1" min="0" max="10" inputmode="decimal" id="m-rating" value="${tx.rating != null ? Number(tx.rating) : ""}" placeholder="e.g. 9.7"></div>
       <div class="span2"><label>Notes</label><input type="text" id="m-notes" value="${esc(tx.notes || "")}"></div>
     </div>` : `
-    <p><strong class="mono">${fmtRM(tx.total)}</strong> · ${esc(tx.category)}${tx.payment_method ? " · " + esc(tx.payment_method) : ""}</p>
+    <p><strong class="mono">${fmtRM(tx.total)}</strong> · ${esc(tx.category)}${tx.payment_method ? " · " + esc(tx.payment_method) : ""}${tx.rating != null ? ` · ★ ${fmtRating(tx.rating)}/10` : ""}</p>
     ${tx.notes ? `<p class="muted">${esc(tx.notes)}</p>` : ""}`}
     ${items.length ? `<table class="items-table">${items.map((i) => `
       <tr><td class="qty">${Number(i.qty) || 1}×</td><td>${esc(i.name)}</td><td>${fmtRM(i.price)}</td></tr>`).join("")}</table>` : ""}
@@ -661,6 +672,9 @@ function openTxModal(tx) {
   $("modal-overlay").classList.remove("hidden");
   $("m-close").addEventListener("click", closeModal);
   if (own) {
+    const syncRating = () => $("m-rating-wrap").classList.toggle("hidden", $("m-cat").value !== RATED_CAT);
+    $("m-cat").addEventListener("change", syncRating);
+    syncRating();
     $("m-save").addEventListener("click", async () => {
       const patch = {
         tx_date: $("m-date").value || tx.tx_date,
@@ -669,6 +683,7 @@ function openTxModal(tx) {
         category: $("m-cat").value,
         payment_method: $("m-pay").value.trim() || null,
         notes: $("m-notes").value.trim() || null,
+        rating: $("m-cat").value === RATED_CAT ? parseRating($("m-rating").value) : null,
       };
       const { error } = await supa.from("transactions").update(patch).eq("id", tx.id);
       if (error) return toast("Couldn't save — try again");
