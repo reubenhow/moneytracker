@@ -657,7 +657,7 @@ function openTxModal(tx) {
       <div class="duo-total"><label>Total (RM)</label><input type="number" step="0.01" min="0" id="m-total" value="${Number(tx.total)}"></div></div>
       <div><label>Category</label><select id="m-cat">${(isExpense(tx) ? CATEGORIES : INCOME_CATS).map((c) => `<option value="${c.name}" ${c.name === tx.category ? "selected" : ""}>${c.e} ${c.name}</option>`).join("")}</select></div>
       <div><label>Paid with</label><input type="text" id="m-pay" value="${esc(tx.payment_method || "")}" placeholder="Cash, card…"></div>
-      <div class="span2" id="m-rating-wrap"><label>Rating (out of 10)</label><input type="number" step="0.1" min="0" max="10" inputmode="decimal" id="m-rating" value="${tx.rating != null ? Number(tx.rating) : ""}" placeholder="e.g. 9.7"></div>
+      <div class="span2" id="m-rating-wrap"><label>Rating (out of 10)</label><input type="number" step="0.1" min="0" max="10" inputmode="decimal" id="m-rating" value="${tx.rating != null ? Number(tx.rating) : ""}"></div>
       <div class="span2"><label>Notes</label><input type="text" id="m-notes" value="${esc(tx.notes || "")}"></div>
     </div>` : `
     <p><strong class="mono">${fmtRM(tx.total)}</strong> · ${esc(tx.category)}${tx.payment_method ? " · " + esc(tx.payment_method) : ""}${tx.rating != null ? ` · ★ ${fmtRating(tx.rating)}/10` : ""}</p>
