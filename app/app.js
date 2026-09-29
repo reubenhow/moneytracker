@@ -799,6 +799,15 @@ async function downscale(file) {
   }
 }
 
+// Pull the server's own error message out of a failed functions.invoke call.
+async function errorText(err) {
+  try {
+    const body = await err.context.json();
+    if (body?.error) return String(body.error).slice(0, 200);
+  } catch (_) { /* no JSON body */ }
+  return String(err?.message || err).slice(0, 200);
+}
+
 async function handleFiles(files) {
   if (!files.length) return;
   $("file-camera").value = ""; $("file-gallery").value = "";
@@ -831,6 +840,7 @@ async function handleFiles(files) {
 
     const found = [];
     let failed = 0;
+    let lastError = "";
     for (let i = 0; i < images.length; i += 6) {
       const batch = images.slice(i, i + 6);
       setText(images.length > 1
@@ -840,8 +850,10 @@ async function handleFiles(files) {
         const { data, error } = await supa.functions.invoke("extract", { body: { images: batch } });
         if (error) throw error;
         found.push(...(data.transactions || []));
-      } catch {
+      } catch (err) {
         failed += batch.length;
+        lastError = await errorText(err);
+        console.error("extract failed:", lastError);
       }
     }
 
@@ -858,7 +870,7 @@ async function handleFiles(files) {
       items: t.items || [],
       notes: t.notes || "",
     }));
-    if (failed) toast(`${failed} page${failed > 1 ? "s" : ""} couldn't be read \u2014 try those again`);
+    if (failed) toast(`${failed} page${failed > 1 ? "s" : ""} couldn't be read \u2014 ${lastError || "try those again"}`);
     if (!drafts.length) {
       if (!failed) toast("Couldn't find any spending in there \u2014 you can type it in instead");
       reviewDrafts = [blankDraft()];
