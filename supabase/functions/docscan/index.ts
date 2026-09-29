@@ -120,13 +120,12 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// First model is the one picked for quality; the rest are fallbacks for when
-// Google answers 503 "high demand" (or 429/500) on it.
-const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.5-flash"];
+// First model is the one picked for quality; the second is a spare for a
+// busy moment (503 "high demand", 429, 500) or a call that hangs.
+const GEMINI_MODELS = ["gemini-3.6-flash", "gemini-3.7-flash"];
 const GEMINI_RETRYABLE = new Set([429, 500, 503]);
-// Warm instances start with whichever model answered last, so a model that
-// stays overloaded for weeks costs nothing after the first scan.
-let geminiLastGood = GEMINI_MODELS[0];
+// A busy Gemini can take half a minute just to say no; cap each call.
+const GEMINI_TIMEOUT_MS = 30_000;
 const JSON_SHAPE_HINT = `Return JSON of this shape: {"documents":[{"title","doc_type","doc_date","summary","fields":[{"label","value"}],"tags":["..."],"transcript","confidence"}]}`;
 
 let preferredModel = "gpt-5.6-luna";
@@ -227,25 +226,31 @@ ${JSON_SHAPE_HINT}` }] },
     generationConfig: { temperature: 0, responseMimeType: "application/json", maxOutputTokens: 16000 },
   });
 
-  // Last working model first, then the rest in order of preference. A busy
-  // reply moves straight on to the next model; only if every model is busy do
-  // we wait 1s and go round once more. Any other error (bad key, bad request)
-  // stops straight away.
-  const order = [geminiLastGood, ...GEMINI_MODELS.filter((m) => m !== geminiLastGood)];
+  // One try per model, no waiting. A busy reply or a timeout moves on to the
+  // spare; any other error (bad key, bad request) stops straight away.
   let resp: Response | null = null;
   let lastErr = "";
-  outer: for (let round = 0; round < 2; round++) {
-    if (round === 1) await new Promise((r) => setTimeout(r, 1000));
-    for (const model of order) {
+  for (const model of GEMINI_MODELS) {
+    try {
       resp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+          body,
+          signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+        },
       );
-      if (resp.ok) { geminiLastGood = model; break outer; }
-      lastErr = await resp.text();
-      console.error(`gemini ${model} failed (${resp.status}):`, lastErr.slice(0, 400));
-      if (!GEMINI_RETRYABLE.has(resp.status)) throw new Error(lastErr);
+    } catch (err) {
+      resp = null;
+      lastErr = `${model} gave no answer within ${GEMINI_TIMEOUT_MS / 1000}s (${(err as Error).name})`;
+      console.error(`gemini ${lastErr}`);
+      continue;
     }
+    if (resp.ok) break;
+    lastErr = await resp.text();
+    console.error(`gemini ${model} failed (${resp.status}):`, lastErr.slice(0, 400));
+    if (!GEMINI_RETRYABLE.has(resp.status)) throw new Error(lastErr);
   }
   if (!resp?.ok) throw new Error(lastErr);
   const data = await resp.json();
