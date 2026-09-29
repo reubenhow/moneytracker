@@ -161,6 +161,23 @@ async function askOpenAI(messages: Msg[], key: string) {
   throw new Error(lastError);
 }
 
+// Models don't always wrap the answer the way the prompt asks: a bare list,
+// a single receipt object, or the list under another key. Accept all of them,
+// and log the raw reply when nothing comes out so an empty result is explainable.
+function asTransactions(text: string): { transactions: Tx[] } {
+  const parsed = JSON.parse(text);
+  let txs: unknown = null;
+  if (Array.isArray(parsed)) txs = parsed;
+  else if (parsed && typeof parsed === "object") {
+    if (Array.isArray(parsed.transactions)) txs = parsed.transactions;
+    else if ("merchant" in parsed || "total" in parsed) txs = [parsed];
+    else txs = Object.values(parsed).find((v) => Array.isArray(v)) ?? null;
+  }
+  const list = Array.isArray(txs) ? (txs as Tx[]) : [];
+  if (!list.length) console.error("no transactions in AI reply:", text.slice(0, 600));
+  return { transactions: list };
+}
+
 async function askGemini(messages: Msg[], key: string) {
   let system = "";
   const contents: unknown[] = [];
@@ -221,7 +238,7 @@ ${JSON_SHAPE_HINT}` }] },
   if (!resp?.ok) throw new Error(lastErr);
   const data = await resp.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
-  return JSON.parse(text) as { transactions: Tx[] };
+  return asTransactions(text);
 }
 
 Deno.serve(async (req) => {
